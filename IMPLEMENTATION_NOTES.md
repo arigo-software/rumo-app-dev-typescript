@@ -2,10 +2,9 @@
 
 ## Übersicht
 
-Vollständig implementiertes VS Code Plugin für die TypeScript App-Entwicklung auf ARIGO Rumo-Steuerungen.
+VS Code Plugin für die TypeScript App-Entwicklung auf ARIGO Rumo-Steuerungen.
 
 - **Plugin-Verzeichnis:** `/home/agent/.openclaw/workspace/projects/rumo-app-dev/`
-- **Basis (Referenz-Code):** `/home/agent/.openclaw/workspace/projects/arigo-vscode-plugin-src/rumo-app-dev-main/`
 - **Kompiliert sauber:** Ja (`tsc` exit 0, keine Fehler/Warnings)
 
 ---
@@ -15,105 +14,147 @@ Vollständig implementiertes VS Code Plugin für die TypeScript App-Entwicklung 
 ```
 rumo-app-dev/
 ├── src/
-│   ├── extension.ts          # Haupt-Einstiegspunkt, Command-Registrierung, Wiring
-│   ├── controllerManager.ts  # Steuerungsverwaltung (Settings lesen/schreiben, QuickPick/InputBox)
-│   ├── sftpSync.ts           # SFTP-Upload mit Auto-Reconnect
+│   ├── extension.ts          # Haupt-Einstiegspunkt, Commands, Aktivierungslogik
+│   ├── controllerManager.ts  # Steuerungsverwaltung: Settings + SecretStorage + rumo.config.json
+│   ├── sftpSync.ts           # SFTP-Upload (ssh2-sftp-client) mit Auto-Reconnect
 │   ├── typeDownloader.ts     # d.ts-Download via SFTP + Versions-Abfrage per HTTPS
-│   ├── projectSetup.ts       # tsconfig.json + .gitignore + Verzeichnisse anlegen
+│   ├── projectSetup.ts       # Projektdateien erzeugen (sftp.json, tsconfig, .gitignore, ...)
 │   ├── debugConfig.ts        # launch.json generieren/aktualisieren
 │   ├── statusBar.ts          # Status Bar Item (unten links)
 │   └── test/
-│       └── extension.test.ts # Minimal-Test-Suite
+│       └── extension.test.ts
 ├── resources/
-│   └── icon.png              # Kopiert vom Quell-Plugin
+│   └── icon.png
 ├── package.json
-├── tsconfig.json             # Für den Plugin-Code selbst (target ES2022, module Node16)
+├── tsconfig.json
 └── .vscodeignore
 ```
 
 ---
 
-## Implementierte Features
+## Implementierte Features (nach Refaktoring v2)
 
-### 1. Steuerungsverwaltung (`controllerManager.ts`)
-- Liest/schreibt `rumoAppDev.controllers` und `rumoAppDev.activeController` aus VS Code Workspace Settings
-- `promptSwitchController()`: QuickPick mit allen Steuerungen + "Add new"
-- `promptAddController()`: Sequentielle InputBox-Abfragen (Name, Host, SSH-Port, HTTPS-Port, Username, Password)
+### 1. Globale Steuerungsverwaltung (`controllerManager.ts`)
 
-### 2. Auto-Setup (`projectSetup.ts`)
-Wird beim Aktivieren **still** (ohne Meldungen) ausgeführt, wenn Dateien bereits vorhanden:
-- Legt `src/type/`, `build/type/`, `types/` an (falls nicht vorhanden)
-- Generiert `tsconfig.json` mit den vorgegebenen Compiler-Optionen (nur wenn nicht vorhanden)
-- Ergänzt `.gitignore` um fehlende Einträge
+**User Settings (global, kein Passwort):**
+```json
+{
+  "rumoAppDev.controllers": [
+    { "name": "Büro", "host": "192.168.1.100", "sshPort": 22, "httpsPort": 443, "username": "admin" }
+  ]
+}
+```
 
-### 3. d.ts Download (`typeDownloader.ts`)
-- SFTP-Download von `/user/dts/` (rekursiv) → `types/` im Workspace
-- Versionsprüfung via HTTPS GET `https://<host>:<httpsPort>/~/dev/0/fb/Setup/dp/version/dat/value`
-  - Basic Auth, `rejectUnauthorized: false`
-- Version wird in `workspaceState` gecacht (Key: `rumoAppDev.cachedVersion.<controllerName>`)
-- Download nur bei Versionsänderung (automatisch) oder per Command (immer)
-- VS Code Progress-Notification während Download
+**SecretStorage:** Passwörter unter Key `rumoAppDev.password.<controllername>`
 
-### 4. SFTP Upload (`sftpSync.ts`)
-- Konfiguration kommt **aus VS Code Settings** (`rumoAppDev.controllers`), nicht aus `sftp.json`
-- File Watcher auf `build/type/**/*.{js,js.map}` (VS Code `createFileSystemWatcher`)
-- Debounce 800ms vor Upload (verhindert mehrfache Uploads bei schnellen Saves)
-- `uploadAllFiles()`: alle `.js`/`.js.map` aus `build/type/` mit Progress-Notification
-- Remote-Ziel: `/type/<relative-path>` (spiegelt Unterverzeichnisstruktur)
-- Auto-Reconnect: bis zu 3 Versuche mit 3s Delay
+- `savePassword(name, password)` → `context.secrets.store(...)`
+- `getPassword(name)` → `context.secrets.get(...)`
+- `getActiveControllerWithPassword(workspaceRoot)` → kombiniert Settings + SecretStorage
+- `promptAddController()`: Passwort via `showInputBox({ password: true })`, dann in SecretStorage
+- `promptSwitchController()`: QuickPick aus globalen Settings (kein Passwort sichtbar)
+- `addController()`: speichert in **Global** Settings (kein Passwort)
 
-### 5. Debug-Konfiguration (`debugConfig.ts`)
-Generiert/aktualisiert `.vscode/launch.json`:
-- `remoteRoot`: `/usr/lib/arigo/rumo/rumo_<VERSION>`
-- `sourceMapPathOverrides`: `/usr/lib/arigo/rumo/rumo_<VERSION>/type/*` → `${workspaceFolder}/src/type/*`
-- Behält bestehende Konfigurationen (anderer Name) bei, ersetzt nur den Eintrag mit gleichem Namen
+### 2. Lokale Projekt-Konfiguration
 
-### 6. Status Bar (`statusBar.ts`)
-- Zeigt `$(server) <Controller-Name>` oder `$(server) No controller`
-- Gelber Hintergrund wenn keine Steuerung konfiguriert
-- Klick → `rumo-app-dev.switchController`
+`rumo.config.json` im Projekt-Root:
+```json
+{ "activeController": "Büro" }
+```
+- Nur der Name der aktiven Steuerung — commitbar (kein Passwort)
+- Gelesen/geschrieben von `ControllerManager.getActiveControllerName()` / `setActiveControllerName()`
+- File Watcher: Plugin aktiviert sich, wenn die Datei angelegt wird
 
-### 7. Commands
-| Command | Titel |
-|---------|-------|
-| `rumo-app-dev.uploadAllFiles` | RumoAppDev: Upload All JavaScript Files |
-| `rumo-app-dev.downloadTypeDefs` | RumoAppDev: Download Type Definitions |
-| `rumo-app-dev.switchController` | RumoAppDev: Switch Controller |
-| `rumo-app-dev.addController` | RumoAppDev: Add Controller |
-| `rumo-app-dev.initProject` | RumoAppDev: Initialize Project |
+### 3. Plugin-Aktivierung nur bei Rumo-Projekt
+
+In `extension.ts`:
+- Beim Start: prüfe ob `rumo.config.json` vorhanden
+- **Ja** → SFTP-Sync aktivieren, d.ts prüfen/downloaden, Status Bar mit Controller-Name
+- **Nein** → Status Bar zeigt "No Rumo project" + Hinweis auf `initProject`, kein Auto-Setup
+- File Watcher auf `rumo.config.json` → bei Anlegen aktiviert sich das Plugin automatisch
+
+### 4. SFTP-Plugin Integration
+
+**package.json:**
+```json
+{ "extensionDependencies": ["Natizyskunk.sftp"] }
+```
+
+**`projectSetup.generateSftpJson()`** erzeugt `.vscode/sftp.json`:
+```json
+{
+  "name": "<controller-name>",
+  "host": "<host>",
+  "protocol": "sftp",
+  "port": 22,
+  "username": "<username>",
+  "password": "<password>",
+  "remotePath": "/type/",
+  "context": "type/",
+  "watcher": { "files": "type/*", "autoUpload": false, "autoDelete": false },
+  "uploadOnSave": true
+}
+```
+- Passwort aus SecretStorage zur Laufzeit gelesen
+- `sftp.json` ist in `.gitignore` (Passwort im Klartext für SFTP-Plugin-Kompatibilität)
+
+### 5. Initialize Project Wizard (`rumo-app-dev.initProject`)
+
+1. Prüfe ob `rumo.config.json` vorhanden → Warnung + Bestätigung
+2. Steuerung auswählen (QuickPick) oder neu anlegen
+3. Legt an: `src/type/`, `build/type/`, `tsconfig.json`, `.gitignore`, `rumo.config.json`,
+   `.vscode/sftp.json`, `.vscode/launch.json`, `.vscode/extensions.json`
+4. d.ts Download starten
+5. SFTP-Verbindung aufbauen
+6. Erfolgsmeldung
+
+### 6. Steuerungswechsel (`rumo-app-dev.switchController`)
+
+1. QuickPick aus globalen Steuerungen
+2. `rumo.config.json` aktualisieren
+3. `.vscode/sftp.json` aktualisieren (Passwort aus SecretStorage)
+4. `.vscode/launch.json` aktualisieren
+5. d.ts neu downloaden
+6. Status Bar aktualisieren
+7. SFTP-Verbindung neu aufbauen
+
+### 7. Restliche Features (unverändert)
+
+- **SFTP Auto-Upload** (`sftpSync.ts`): File Watcher auf `build/type/`, Debounce 800ms, Auto-Reconnect
+- **d.ts Download** (`typeDownloader.ts`): SFTP von `/user/dts/`, Versions-Caching im workspaceState
+- **Debug-Konfiguration** (`debugConfig.ts`): `launch.json` mit versionsabhängigem `remoteRoot`
+- **Status Bar** (`statusBar.ts`): `$(server) <Name>` / `$(server) No controller` / `$(server) No Rumo project`
 
 ---
 
-## Automatische Abläufe beim Plugin-Start
+## Automatische Abläufe
 
-1. Auto-Setup (Verzeichnisse, tsconfig, .gitignore) — still
-2. Aktive Steuerung aus Settings laden
+### Beim Plugin-Start (Workspace mit `rumo.config.json`)
+1. `projectSetup.silentInit()` — Verzeichnisse, tsconfig, .gitignore still
+2. Aktive Steuerung aus `rumo.config.json` + Settings laden (Passwort aus SecretStorage)
 3. Status Bar aktualisieren
 4. SFTP-Verbindung herstellen
 5. Controller-Version per HTTPS abfragen
 6. Wenn Version != gecachte Version → d.ts Download
 7. `launch.json` aktualisieren
 
-Bei **Steuerungswechsel** (Settings-Änderung) wird Schritt 3–7 wiederholt.
+### Beim Plugin-Start (Workspace ohne `rumo.config.json`)
+1. Status Bar: "No Rumo project" mit `initProject`-Klick-Aktion
+2. Kein SFTP, kein d.ts Download
+
+### Bei `rumo.config.json`-Änderung oder VS Code Settings-Änderung
+→ Schritt 2–7 wiederholen
 
 ---
 
-## Wichtige Design-Entscheidungen
+## Design-Entscheidungen
 
-- **Keine sftp.json**: SFTP-Konfiguration kommt ausschließlich aus VS Code Settings
-- **typeRoots in tsconfig**: `./types` vor `./node_modules/@types` — d.ts files werden automatisch von TypeScript gefunden
-- **Version-Caching pro Controller-Name**: `workspaceState` (persistent, Workspace-spezifisch)
-- **Debounce beim File Watch**: 800ms verhindert Upload-Sturmfluten beim `tsc --watch`
-- **Strict TypeScript für Plugin-Code**: `"strict": true` in Plugin-eigenem `tsconfig.json`
-- **rejectUnauthorized: false**: Für selbstsignierte Zertifikate auf der Steuerung
-
----
-
-## Bekannte Einschränkungen / TODOs
-
-- **tsc --watch Task**: Nicht als VS Code Task Provider registriert (kann der Nutzer manuell über das Terminal starten oder in `.vscode/tasks.json` konfigurieren)
-- **Password im Klartext**: VS Code Settings speichern das Passwort im Klartext. Für Produktion wäre SecretStorage (VS Code 1.80+) besser — aber das sprengt den aktuellen Scope
-- **Tests**: Nur Minimal-Test vorhanden (kein Workspace vorhanden in CI-Umgebung)
+- **SecretStorage für Passwörter**: Kein Klartext in VS Code Settings (global oder workspace)
+- **rumo.config.json ist commitbar**: Nur der Controller-Name, keine Credentials
+- **Zwei SFTP-Mechanismen**: `SftpSync` (intern, ssh2-sftp-client) für Auto-Upload bei Dateiänderung;
+  SFTP-Plugin (Natizyskunk.sftp) für manuelle Sync-Aktionen via `.vscode/sftp.json`
+- **extensionDependencies**: Stellt sicher, dass das SFTP-Plugin mitinstalliert wird
+- **Bedingtes Aktivieren**: Kein Lärm in Workspaces ohne `rumo.config.json`
+- **Global vs. Workspace Settings**: Controller-Liste global (geräteweit), aktiver Controller lokal
 
 ---
 
