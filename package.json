@@ -1,0 +1,118 @@
+{
+  "name": "rumo-app-dev",
+  "displayName": "Rumo App Development",
+  "description": "TypeScript app development for the ARIGO Rumo controller. Handles project setup, SFTP upload, type definitions download, and debug configuration.",
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arigo-software/rumo-app-dev.git"
+  },
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "author": "Arigo Software GmbH",
+  "license": "MIT",
+  "icon": "resources/icon.png",
+  "publisher": "arigo-software",
+  "contributes": {
+    "commands": [
+      {
+        "command": "rumo-app-dev.uploadAllFiles",
+        "title": "RumoAppDev: Upload All JavaScript Files"
+      },
+      {
+        "command": "rumo-app-dev.downloadTypeDefs",
+        "title": "RumoAppDev: Download Type Definitions"
+      },
+      {
+        "command": "rumo-app-dev.switchController",
+        "title": "RumoAppDev: Switch Controller"
+      },
+      {
+        "command": "rumo-app-dev.addController",
+        "title": "RumoAppDev: Add Controller"
+      },
+      {
+        "command": "rumo-app-dev.initProject",
+        "title": "RumoAppDev: Initialize Project"
+      }
+    ],
+    "configuration": {
+      "title": "Rumo App Development",
+      "properties": {
+        "rumoAppDev.controllers": {
+          "type": "array",
+          "default": [],
+          "description": "List of Rumo controllers",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Controller name"
+              },
+              "host": {
+                "type": "string",
+                "description": "Controller IP address or hostname"
+              },
+              "sshPort": {
+                "type": "number",
+                "default": 22,
+                "description": "SSH port"
+              },
+              "httpsPort": {
+                "type": "number",
+                "default": 443,
+                "description": "HTTPS port for version API"
+              },
+              "username": {
+                "type": "string",
+                "description": "SSH username"
+              },
+              "password": {
+                "type": "string",
+                "description": "SSH password"
+              }
+            },
+            "required": ["name", "host", "username", "password"]
+          }
+        },
+        "rumoAppDev.activeController": {
+          "type": "string",
+          "default": "",
+          "description": "Name of the currently active controller"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.9",
+    "@types/node": "20.x",
+    "@types/ssh2-sftp-client": "^9.0.4",
+    "@types/vscode": "^1.95.0",
+    "@typescript-eslint/eslint-plugin": "^8.10.0",
+    "@typescript-eslint/parser": "^8.7.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "eslint": "^9.13.0",
+    "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "ssh2-sftp-client": "^11.0.0"
+  }
+}
