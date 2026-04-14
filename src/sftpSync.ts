@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import Client from 'ssh2-sftp-client';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ControllerConfig } from './controllerManager';
+import { ControllerConfigWithPassword } from './controllerManager';
 
 const BUILD_TYPE_DIR = 'build/type';
 const REMOTE_TYPE_ROOT = '/type';
@@ -11,7 +11,7 @@ const MAX_RECONNECT_ATTEMPTS = 3;
 
 export class SftpSync {
     private sftp: Client;
-    private controller: ControllerConfig | undefined;
+    private controller: ControllerConfigWithPassword | undefined;
     private connected = false;
     private connecting = false;
     private reconnectAttempts = 0;
@@ -27,7 +27,7 @@ export class SftpSync {
     /**
      * Updates the active controller config and resets the SFTP connection.
      */
-    public async setController(controller: ControllerConfig | undefined): Promise<void> {
+    public async setController(controller: ControllerConfigWithPassword | undefined): Promise<void> {
         if (this.connected) {
             try { await this.sftp.end(); } catch { /* ignore */ }
             this.connected = false;

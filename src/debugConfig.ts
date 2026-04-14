@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ControllerConfig } from './controllerManager';
+import { ControllerConfigWithPassword } from './controllerManager';
 
 interface LaunchConfig {
     version: string;
@@ -28,7 +28,7 @@ export class DebugConfig {
      * The VERSION is fetched from the controller's HTTPS API.
      */
     public async updateLaunchJson(
-        controller: ControllerConfig,
+        controller: ControllerConfigWithPassword,
         workspaceRoot: string,
         version: string | undefined
     ): Promise<void> {

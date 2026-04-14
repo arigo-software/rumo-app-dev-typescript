@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import Client from 'ssh2-sftp-client';
-import { ControllerConfig } from './controllerManager';
+import { ControllerConfigWithPassword } from './controllerManager';
 
 const REMOTE_DTS_PATH = '/user/dts';
 const LOCAL_DTS_DIR = 'src';
@@ -16,7 +16,7 @@ export class TypeDownloader {
      * @param workspaceRoot  Absolute path to the workspace root
      */
     public async downloadTypeDefs(
-        controller: ControllerConfig,
+        controller: ControllerConfigWithPassword,
         workspaceRoot: string
     ): Promise<void> {
         // d.ts files land in src/ — baseUrl: "src" makes bare imports resolve correctly.
@@ -102,7 +102,7 @@ export class TypeDownloader {
      * Fetches the firmware version string from the controller via HTTPS.
      * Returns undefined on failure.
      */
-    public async fetchControllerVersion(controller: ControllerConfig): Promise<string | undefined> {
+    public async fetchControllerVersion(controller: ControllerConfigWithPassword): Promise<string | undefined> {
         const https = await import('https');
         const url = `https://${controller.host}:${controller.httpsPort}/~/dev/0/fb/Setup/dp/version/dat/value`;
 

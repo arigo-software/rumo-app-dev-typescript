@@ -5,23 +5,36 @@ export class StatusBar {
 
     constructor() {
         this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-        this.item.command = 'rumo-app-dev.switchController';
         this.item.tooltip = 'Click to switch Rumo controller';
-        this.update(undefined);
+        this.updateNoProject();
         this.item.show();
     }
 
     /**
-     * Updates the status bar with the active controller name (or a "no controller" indicator).
+     * Shows the active controller name.
      */
     public update(controllerName: string | undefined): void {
         if (controllerName) {
             this.item.text = `$(server) ${controllerName}`;
             this.item.backgroundColor = undefined;
+            this.item.command = 'rumo-app-dev.switchController';
+            this.item.tooltip = 'Click to switch Rumo controller';
         } else {
             this.item.text = '$(server) No controller';
             this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+            this.item.command = 'rumo-app-dev.switchController';
+            this.item.tooltip = 'No controller selected — click to select';
         }
+    }
+
+    /**
+     * Shows "No project" state when rumo.config.json is not present.
+     */
+    public updateNoProject(): void {
+        this.item.text = '$(server) No Rumo project';
+        this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+        this.item.command = 'rumo-app-dev.initProject';
+        this.item.tooltip = 'No Rumo project — click to initialize';
     }
 
     public dispose(): void {

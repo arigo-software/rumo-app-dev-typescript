@@ -17,7 +17,7 @@ let projectSetup: ProjectSetup;
 let debugConfig: DebugConfig;
 let statusBar: StatusBar;
 
-/** Workspace-state key for caching the last known controller version. */
+/** workspaceState key prefix for caching controller version. */
 const VERSION_CACHE_KEY = 'rumoAppDev.cachedVersion';
 
 // ── Activation ─────────────────────────────────────────────────────────────────
@@ -25,7 +25,7 @@ const VERSION_CACHE_KEY = 'rumoAppDev.cachedVersion';
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     console.log('RumoAppDev: Extension activating…');
 
-    controllerManager = new ControllerManager();
+    controllerManager = new ControllerManager(context);
     sftpSync = new SftpSync();
     typeDownloader = new TypeDownloader();
     projectSetup = new ProjectSetup();
@@ -35,7 +35,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(statusBar);
     context.subscriptions.push(sftpSync);
 
-    // Register all commands
+    // Register commands
     context.subscriptions.push(
         vscode.commands.registerCommand('rumo-app-dev.uploadAllFiles', () =>
             cmdUploadAllFiles()
@@ -50,11 +50,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             cmdAddController(context)
         ),
         vscode.commands.registerCommand('rumo-app-dev.initProject', () =>
-            cmdInitProject()
+            cmdInitProject(context)
         ),
     );
 
-    // Watch for settings changes (controller list / active controller)
+    // Watch for VS Code settings changes (controller list in global settings)
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(async (e) => {
             if (e.affectsConfiguration('rumoAppDev')) {
@@ -63,11 +63,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
+    // Watch for rumo.config.json creation / deletion
+    setupRumoConfigWatcher(context);
+
     // Set up file watcher for build/type/
     setupBuildWatcher(context);
 
-    // Perform initial setup
-    await initialSetup(context);
+    // Perform initial activation
+    await initialActivation(context);
 
     console.log('RumoAppDev: Extension activated.');
 }
@@ -76,16 +79,30 @@ export function deactivate(): void {
     sftpSync.dispose();
 }
 
-// ── Initial Setup ──────────────────────────────────────────────────────────────
+// ── Initial Activation ─────────────────────────────────────────────────────────
 
-async function initialSetup(context: vscode.ExtensionContext): Promise<void> {
+async function initialActivation(context: vscode.ExtensionContext): Promise<void> {
     const workspaceRoot = getWorkspaceRoot();
     if (!workspaceRoot) { return; }
 
-    // Always auto-init project structure (silently, does not overwrite existing files)
-    await projectSetup.initProject(workspaceRoot, true);
+    if (!controllerManager.isRumoProject(workspaceRoot)) {
+        // No rumo.config.json → not a Rumo project, show hint in status bar
+        statusBar.updateNoProject();
+        console.log('RumoAppDev: No rumo.config.json found — waiting for project initialisation.');
+        return;
+    }
 
-    const controller = controllerManager.getActiveController();
+    await activateForProject(context, workspaceRoot);
+}
+
+async function activateForProject(
+    context: vscode.ExtensionContext,
+    workspaceRoot: string
+): Promise<void> {
+    // Silent structure setup
+    await projectSetup.silentInit(workspaceRoot);
+
+    const controller = await controllerManager.getActiveControllerWithPassword(workspaceRoot);
     statusBar.update(controller?.name);
 
     if (!controller) { return; }
@@ -107,12 +124,12 @@ async function initialSetup(context: vscode.ExtensionContext): Promise<void> {
 
 async function onControllerConfigChanged(context: vscode.ExtensionContext): Promise<void> {
     const workspaceRoot = getWorkspaceRoot();
-    if (!workspaceRoot) { return; }
+    if (!workspaceRoot || !controllerManager.isRumoProject(workspaceRoot)) { return; }
 
-    const controller = controllerManager.getActiveController();
+    const controller = await controllerManager.getActiveControllerWithPassword(workspaceRoot);
     statusBar.update(controller?.name);
 
-    // Reconnect SFTP with new controller
+    // Reconnect SFTP
     try {
         await sftpSync.setController(controller);
     } catch {
@@ -121,41 +138,36 @@ async function onControllerConfigChanged(context: vscode.ExtensionContext): Prom
 
     if (!controller) { return; }
 
-    // Re-download type defs for new controller (if version changed)
     await maybeDownloadTypeDefs(context, controller);
 
-    // Refresh launch.json
     const version = await typeDownloader.fetchControllerVersion(controller);
     await debugConfig.updateLaunchJson(controller, workspaceRoot, version);
 }
 
-/**
- * Downloads type definitions only when the controller version has changed since last download.
- */
-async function maybeDownloadTypeDefs(
-    context: vscode.ExtensionContext,
-    controller: { name: string; host: string; sshPort: number; httpsPort: number; username: string; password: string }
-): Promise<void> {
+// ── rumo.config.json Watcher ──────────────────────────────────────────────────
+
+function setupRumoConfigWatcher(context: vscode.ExtensionContext): void {
     const workspaceRoot = getWorkspaceRoot();
     if (!workspaceRoot) { return; }
 
-    const version = await typeDownloader.fetchControllerVersion(controller);
-    const cacheKey = `${VERSION_CACHE_KEY}.${controller.name}`;
-    const cachedVersion = context.workspaceState.get<string>(cacheKey);
+    const pattern = new vscode.RelativePattern(workspaceRoot, 'rumo.config.json');
+    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
 
-    if (version && version === cachedVersion) {
-        console.log(`RumoAppDev: Type defs up-to-date (version ${version}), skipping download.`);
-        return;
-    }
+    watcher.onDidCreate(async () => {
+        console.log('RumoAppDev: rumo.config.json created — activating for project.');
+        await activateForProject(context, workspaceRoot);
+    });
 
-    try {
-        await typeDownloader.downloadTypeDefs(controller, workspaceRoot);
-        if (version) {
-            await context.workspaceState.update(cacheKey, version);
-        }
-    } catch {
-        // Error already shown by typeDownloader
-    }
+    watcher.onDidChange(async () => {
+        await onControllerConfigChanged(context);
+    });
+
+    watcher.onDidDelete(() => {
+        statusBar.updateNoProject();
+        sftpSync.setController(undefined).catch(() => { /* ignore */ });
+    });
+
+    context.subscriptions.push(watcher);
 }
 
 // ── File Watcher for build/type/ ──────────────────────────────────────────────
@@ -179,7 +191,6 @@ function setupBuildWatcher(context: vscode.ExtensionContext): void {
         }
         changeTimeouts.set(key, setTimeout(async () => {
             changeTimeouts.delete(key);
-            // Only upload if the file still exists
             if (!fs.existsSync(uri.fsPath)) { return; }
             await sftpSync.uploadFile(uri.fsPath, workspaceRoot);
         }, 800));
@@ -208,7 +219,7 @@ async function cmdDownloadTypeDefs(context: vscode.ExtensionContext): Promise<vo
     const workspaceRoot = getWorkspaceRoot();
     if (!workspaceRoot) { return; }
 
-    const controller = controllerManager.getActiveController();
+    const controller = await controllerManager.getActiveControllerWithPassword(workspaceRoot);
     if (!controller) {
         vscode.window.showWarningMessage('RumoAppDev: No active controller configured.');
         return;
@@ -216,7 +227,6 @@ async function cmdDownloadTypeDefs(context: vscode.ExtensionContext): Promise<vo
 
     try {
         await typeDownloader.downloadTypeDefs(controller, workspaceRoot);
-        // Update version cache
         const version = await typeDownloader.fetchControllerVersion(controller);
         if (version) {
             const cacheKey = `${VERSION_CACHE_KEY}.${controller.name}`;
@@ -228,6 +238,20 @@ async function cmdDownloadTypeDefs(context: vscode.ExtensionContext): Promise<vo
 }
 
 async function cmdSwitchController(context: vscode.ExtensionContext): Promise<void> {
+    const workspaceRoot = getWorkspaceRoot();
+    if (!workspaceRoot) { return; }
+
+    if (!controllerManager.isRumoProject(workspaceRoot)) {
+        const init = await vscode.window.showWarningMessage(
+            'RumoAppDev: This workspace is not a Rumo project. Would you like to initialize it?',
+            'Initialize Project', 'Cancel'
+        );
+        if (init === 'Initialize Project') {
+            await cmdInitProject(context);
+        }
+        return;
+    }
+
     const selected = await controllerManager.promptSwitchController();
     if (!selected) { return; }
 
@@ -236,23 +260,201 @@ async function cmdSwitchController(context: vscode.ExtensionContext): Promise<vo
         return;
     }
 
-    await controllerManager.setActiveController(selected);
-    // onDidChangeConfiguration will fire and handle the rest
+    await performControllerSwitch(context, workspaceRoot, selected);
 }
 
 async function cmdAddController(context: vscode.ExtensionContext): Promise<void> {
+    const workspaceRoot = getWorkspaceRoot();
+    if (!workspaceRoot) { return; }
+
     const controller = await controllerManager.promptAddController();
     if (!controller) { return; }
 
-    await controllerManager.addController(controller);
-    await controllerManager.setActiveController(controller.name);
-    // onDidChangeConfiguration will fire and handle the rest
+    // If this is a Rumo project, also switch to the new controller
+    if (controllerManager.isRumoProject(workspaceRoot)) {
+        await performControllerSwitch(context, workspaceRoot, controller.name);
+    }
 }
 
-async function cmdInitProject(): Promise<void> {
+/**
+ * Initialize Project Wizard — creates all project files, picks a controller.
+ */
+async function cmdInitProject(context: vscode.ExtensionContext): Promise<void> {
     const workspaceRoot = getWorkspaceRoot();
     if (!workspaceRoot) { return; }
-    await projectSetup.initProject(workspaceRoot, false);
+
+    // Step 1: Warn if rumo.config.json already exists
+    if (controllerManager.isRumoProject(workspaceRoot)) {
+        const confirm = await vscode.window.showWarningMessage(
+            'RumoAppDev: This workspace is already a Rumo project. Re-initialize and overwrite configuration?',
+            'Yes, Re-initialize', 'Cancel'
+        );
+        if (confirm !== 'Yes, Re-initialize') { return; }
+    }
+
+    // Step 2: Select or create a controller
+    let controllerName: string | undefined;
+    const existingControllers = controllerManager.getControllers();
+
+    if (existingControllers.length > 0) {
+        const choice = await controllerManager.promptSwitchController();
+        if (!choice) { return; }
+
+        if (choice === '__ADD_NEW__') {
+            const newCtrl = await controllerManager.promptAddController();
+            if (!newCtrl) { return; }
+            controllerName = newCtrl.name;
+        } else {
+            controllerName = choice;
+        }
+    } else {
+        // No controllers configured at all — add one now
+        vscode.window.showInformationMessage(
+            'RumoAppDev: No controllers configured. Please add a controller first.'
+        );
+        const newCtrl = await controllerManager.promptAddController();
+        if (!newCtrl) { return; }
+        controllerName = newCtrl.name;
+    }
+
+    // Retrieve full controller config with password
+    const controller = await controllerManager.getActiveControllerWithPassword(
+        workspaceRoot
+    ).then(async (c) => {
+        // If different controller was just set, build manually
+        if (c?.name === controllerName) { return c; }
+        const base = controllerManager.getControllers().find(x => x.name === controllerName);
+        if (!base) { return undefined; }
+        const password = (await controllerManager.getPassword(base.name)) ?? '';
+        return { ...base, password };
+    });
+
+    if (!controller) {
+        vscode.window.showErrorMessage('RumoAppDev: Could not resolve controller configuration.');
+        return;
+    }
+
+    // Step 3: Create project files
+    await projectSetup.setupProjectFiles(workspaceRoot, controller, false);
+
+    // Write rumo.config.json (activeController)
+    controllerManager.setActiveControllerName(workspaceRoot, controllerName!);
+
+    // Write launch.json
+    const version = await typeDownloader.fetchControllerVersion(controller);
+    await debugConfig.updateLaunchJson(controller, workspaceRoot, version);
+
+    // Step 4: Start d.ts download
+    try {
+        await typeDownloader.downloadTypeDefs(controller, workspaceRoot);
+        if (version) {
+            const cacheKey = `${VERSION_CACHE_KEY}.${controller.name}`;
+            await context.workspaceState.update(cacheKey, version);
+        }
+    } catch {
+        // Error already shown
+    }
+
+    // Connect SFTP
+    try {
+        await sftpSync.setController(controller);
+    } catch {
+        // non-fatal
+    }
+
+    statusBar.update(controller.name);
+
+    // Step 5: Success
+    vscode.window.showInformationMessage(
+        `RumoAppDev: Project initialized for controller "${controller.name}".`
+    );
+}
+
+// ── Switch Controller Helper ──────────────────────────────────────────────────
+
+/**
+ * Performs a full controller switch:
+ * 1. Updates rumo.config.json
+ * 2. Regenerates .vscode/sftp.json
+ * 3. Updates .vscode/launch.json
+ * 4. Re-downloads d.ts
+ * 5. Updates status bar
+ * 6. Reconnects SFTP
+ */
+async function performControllerSwitch(
+    context: vscode.ExtensionContext,
+    workspaceRoot: string,
+    controllerName: string
+): Promise<void> {
+    // 1. Update rumo.config.json
+    controllerManager.setActiveControllerName(workspaceRoot, controllerName);
+
+    // Get full controller with password
+    const controller = await controllerManager.getActiveControllerWithPassword(workspaceRoot);
+    if (!controller) {
+        vscode.window.showErrorMessage(`RumoAppDev: Controller "${controllerName}" not found in settings.`);
+        return;
+    }
+
+    // 2. Regenerate .vscode/sftp.json
+    projectSetup.generateSftpJson(workspaceRoot, controller);
+
+    // 3. Update .vscode/launch.json
+    const version = await typeDownloader.fetchControllerVersion(controller);
+    await debugConfig.updateLaunchJson(controller, workspaceRoot, version);
+
+    // 4. Re-download d.ts
+    try {
+        await typeDownloader.downloadTypeDefs(controller, workspaceRoot);
+        if (version) {
+            const cacheKey = `${VERSION_CACHE_KEY}.${controller.name}`;
+            await context.workspaceState.update(cacheKey, version);
+        }
+    } catch {
+        // Error already shown
+    }
+
+    // 5. Update status bar
+    statusBar.update(controller.name);
+
+    // 6. Reconnect SFTP
+    try {
+        await sftpSync.setController(controller);
+    } catch {
+        // non-fatal
+    }
+
+    vscode.window.showInformationMessage(
+        `RumoAppDev: Switched to controller "${controller.name}".`
+    );
+}
+
+// ── Version Download Helper ───────────────────────────────────────────────────
+
+async function maybeDownloadTypeDefs(
+    context: vscode.ExtensionContext,
+    controller: import('./controllerManager').ControllerConfigWithPassword
+): Promise<void> {
+    const workspaceRoot = getWorkspaceRoot();
+    if (!workspaceRoot) { return; }
+
+    const version = await typeDownloader.fetchControllerVersion(controller);
+    const cacheKey = `${VERSION_CACHE_KEY}.${controller.name}`;
+    const cachedVersion = context.workspaceState.get<string>(cacheKey);
+
+    if (version && version === cachedVersion) {
+        console.log(`RumoAppDev: Type defs up-to-date (version ${version}), skipping download.`);
+        return;
+    }
+
+    try {
+        await typeDownloader.downloadTypeDefs(controller, workspaceRoot);
+        if (version) {
+            await context.workspaceState.update(cacheKey, version);
+        }
+    } catch {
+        // Error already shown by typeDownloader
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -266,10 +468,6 @@ function getWorkspaceRoot(): string | undefined {
     return folders[0].uri.fsPath;
 }
 
-/**
- * Resolves the absolute path to the local tsconfig-generated path
- * (for tsc --watch task provider, if needed later).
- */
 export function getTsconfigPath(workspaceRoot: string): string {
     return path.join(workspaceRoot, 'tsconfig.json');
 }

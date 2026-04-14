@@ -1,70 +1,148 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 
+// ── Interfaces ─────────────────────────────────────────────────────────────────
+
+/** Controller configuration stored in global (user) VS Code settings — no password. */
 export interface ControllerConfig {
     name: string;
     host: string;
     sshPort: number;
     httpsPort: number;
     username: string;
+}
+
+/** Full controller config including the password retrieved from SecretStorage. */
+export interface ControllerConfigWithPassword extends ControllerConfig {
     password: string;
 }
 
+interface RumoProjectConfig {
+    activeController: string;
+}
+
+// ── ControllerManager ──────────────────────────────────────────────────────────
+
 export class ControllerManager {
     private static readonly CONFIG_KEY = 'rumoAppDev';
+    private static readonly SECRET_PREFIX = 'rumoAppDev.password.';
+
+    constructor(private readonly context: vscode.ExtensionContext) {}
+
+    // ── SecretStorage ──────────────────────────────────────────────────────────
+
+    public async savePassword(name: string, password: string): Promise<void> {
+        await this.context.secrets.store(
+            `${ControllerManager.SECRET_PREFIX}${name}`,
+            password
+        );
+    }
+
+    public async getPassword(name: string): Promise<string | undefined> {
+        return this.context.secrets.get(
+            `${ControllerManager.SECRET_PREFIX}${name}`
+        );
+    }
+
+    // ── Global Controllers (User Settings) ────────────────────────────────────
 
     /**
-     * Returns all configured controllers from VS Code workspace/user settings.
+     * Returns all controllers from global (user) VS Code settings.
+     * Passwords are NOT included here; retrieve them via getPassword().
      */
     public getControllers(): ControllerConfig[] {
         const config = vscode.workspace.getConfiguration(ControllerManager.CONFIG_KEY);
-        const raw = config.get<ControllerConfig[]>('controllers') ?? [];
+        const raw = config.get<any[]>('controllers') ?? [];
         return raw.map(c => ({
-            name: c.name,
-            host: c.host,
-            sshPort: c.sshPort ?? 22,
-            httpsPort: c.httpsPort ?? 443,
-            username: c.username,
-            password: c.password,
+            name: String(c.name ?? ''),
+            host: String(c.host ?? ''),
+            sshPort: Number(c.sshPort) || 22,
+            httpsPort: Number(c.httpsPort) || 443,
+            username: String(c.username ?? ''),
         }));
     }
 
     /**
-     * Returns the currently active controller, or undefined if none is set.
-     */
-    public getActiveController(): ControllerConfig | undefined {
-        const config = vscode.workspace.getConfiguration(ControllerManager.CONFIG_KEY);
-        const activeName = config.get<string>('activeController') ?? '';
-        if (!activeName) {
-            return undefined;
-        }
-        return this.getControllers().find(c => c.name === activeName);
-    }
-
-    /**
-     * Sets the active controller by name (in workspace settings).
-     */
-    public async setActiveController(name: string): Promise<void> {
-        const config = vscode.workspace.getConfiguration(ControllerManager.CONFIG_KEY);
-        await config.update('activeController', name, vscode.ConfigurationTarget.Workspace);
-    }
-
-    /**
-     * Adds a new controller to the workspace settings.
+     * Saves a controller to global (user) settings.
+     * Password is NOT stored here — use savePassword() separately.
      */
     public async addController(controller: ControllerConfig): Promise<void> {
         const config = vscode.workspace.getConfiguration(ControllerManager.CONFIG_KEY);
         const existing = this.getControllers();
         const updated = [...existing.filter(c => c.name !== controller.name), controller];
-        await config.update('controllers', updated, vscode.ConfigurationTarget.Workspace);
+        await config.update('controllers', updated, vscode.ConfigurationTarget.Global);
+    }
+
+    // ── Local Project Config (rumo.config.json) ───────────────────────────────
+
+    /**
+     * Returns the name of the active controller from rumo.config.json, or undefined.
+     */
+    public getActiveControllerName(workspaceRoot: string): string | undefined {
+        const configPath = path.join(workspaceRoot, 'rumo.config.json');
+        if (!fs.existsSync(configPath)) {
+            return undefined;
+        }
+        try {
+            const raw = fs.readFileSync(configPath, 'utf8');
+            const cfg = JSON.parse(raw) as RumoProjectConfig;
+            return cfg.activeController || undefined;
+        } catch {
+            return undefined;
+        }
     }
 
     /**
-     * Interactive prompt to add a new controller via VS Code input boxes.
-     * Returns the new controller config, or undefined if the user cancelled.
+     * Writes the active controller name to rumo.config.json.
      */
-    public async promptAddController(): Promise<ControllerConfig | undefined> {
+    public setActiveControllerName(workspaceRoot: string, name: string): void {
+        const configPath = path.join(workspaceRoot, 'rumo.config.json');
+        const cfg: RumoProjectConfig = { activeController: name };
+        fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+    }
+
+    /**
+     * Returns true if the workspace contains a rumo.config.json (= is a Rumo project).
+     */
+    public isRumoProject(workspaceRoot: string): boolean {
+        return fs.existsSync(path.join(workspaceRoot, 'rumo.config.json'));
+    }
+
+    // ── Active Controller ──────────────────────────────────────────────────────
+
+    /**
+     * Returns the active controller config (without password) by reading rumo.config.json
+     * and looking up the controller in global settings.
+     */
+    public getActiveController(workspaceRoot: string): ControllerConfig | undefined {
+        const activeName = this.getActiveControllerName(workspaceRoot);
+        if (!activeName) { return undefined; }
+        return this.getControllers().find(c => c.name === activeName);
+    }
+
+    /**
+     * Returns the active controller including its password from SecretStorage.
+     */
+    public async getActiveControllerWithPassword(
+        workspaceRoot: string
+    ): Promise<ControllerConfigWithPassword | undefined> {
+        const controller = this.getActiveController(workspaceRoot);
+        if (!controller) { return undefined; }
+        const password = (await this.getPassword(controller.name)) ?? '';
+        return { ...controller, password };
+    }
+
+    // ── Prompts ────────────────────────────────────────────────────────────────
+
+    /**
+     * Interactive wizard to add a new controller.
+     * Saves credentials to global settings + SecretStorage.
+     * Returns the full controller (including password), or undefined if cancelled.
+     */
+    public async promptAddController(): Promise<ControllerConfigWithPassword | undefined> {
         const name = await vscode.window.showInputBox({
-            prompt: 'Controller name (e.g. "My Rumo Controller")',
+            prompt: 'Controller name (e.g. "Büro")',
             ignoreFocusOut: true,
         });
         if (!name) { return undefined; }
@@ -103,19 +181,26 @@ export class ControllerManager {
         });
         if (password === undefined) { return undefined; }
 
-        return {
+        const controller: ControllerConfig = {
             name,
             host,
             sshPort: parseInt(sshPortStr, 10) || 22,
             httpsPort: parseInt(httpsPortStr, 10) || 443,
             username,
-            password,
         };
+
+        // Save to global settings (no password)
+        await this.addController(controller);
+
+        // Save password to SecretStorage
+        await this.savePassword(name, password);
+
+        return { ...controller, password };
     }
 
     /**
-     * Interactive QuickPick to select a controller from the list.
-     * Returns the selected controller name, or undefined if the user cancelled.
+     * QuickPick to select a controller from the global settings list.
+     * Returns the selected controller name, '__ADD_NEW__', or undefined if cancelled.
      */
     public async promptSwitchController(): Promise<string | undefined> {
         const controllers = this.getControllers();
@@ -130,11 +215,9 @@ export class ControllerManager {
             return undefined;
         }
 
-        const active = this.getActiveController();
         const items: vscode.QuickPickItem[] = controllers.map(c => ({
             label: c.name,
             description: `${c.host}:${c.sshPort}`,
-            detail: c.name === active?.name ? '$(check) Active' : undefined,
         }));
 
         items.push({ label: '$(add) Add new controller...', description: '' });

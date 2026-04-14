@@ -16,6 +16,9 @@
   "activationEvents": [
     "onStartupFinished"
   ],
+  "extensionDependencies": [
+    "Natizyskunk.sftp"
+  ],
   "main": "./out/extension.js",
   "author": "Arigo Software GmbH",
   "license": "MIT",
@@ -75,19 +78,16 @@
               "username": {
                 "type": "string",
                 "description": "SSH username"
-              },
-              "password": {
-                "type": "string",
-                "description": "SSH password"
               }
             },
-            "required": ["name", "host", "username", "password"]
+            "required": ["name", "host", "username"]
           }
         },
         "rumoAppDev.activeController": {
           "type": "string",
           "default": "",
-          "description": "Name of the currently active controller"
+          "markdownDeprecationMessage": "Use `rumo.config.json` in the project root to track the active controller.",
+          "description": "Deprecated: active controller is now stored in rumo.config.json"
         }
       }
     }
