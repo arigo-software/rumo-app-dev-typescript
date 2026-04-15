@@ -11,7 +11,7 @@ export class StatusBar {
     }
 
     /**
-     * Shows the active controller name.
+     * Shows the active controller name with connection status.
      */
     public update(controllerName: string | undefined): void {
         if (controllerName) {
@@ -25,6 +25,35 @@ export class StatusBar {
             this.item.command = 'rumo-app-dev.switchController';
             this.item.tooltip = 'No controller selected — click to select';
         }
+    }
+
+    /**
+     * Shows connected state (green checkmark).
+     */
+    public setConnected(controllerName: string): void {
+        this.item.text = `$(check) ${controllerName}`;
+        this.item.backgroundColor = undefined;
+        this.item.command = 'rumo-app-dev.switchController';
+        this.item.tooltip = `Connected to ${controllerName} — click to switch`;
+    }
+
+    /**
+     * Shows disconnected / unreachable state.
+     */
+    public setDisconnected(controllerName: string): void {
+        this.item.text = `$(warning) ${controllerName} (offline)`;
+        this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+        this.item.command = 'rumo-app-dev.switchController';
+        this.item.tooltip = `Cannot reach ${controllerName} — click to switch`;
+    }
+
+    /**
+     * Shows a transient status message (e.g. uploading, restarting).
+     */
+    public setStatus(controllerName: string, message: string): void {
+        this.item.text = `$(sync~spin) ${controllerName}: ${message}`;
+        this.item.backgroundColor = undefined;
+        this.item.tooltip = message;
     }
 
     /**

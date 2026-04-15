@@ -116,12 +116,20 @@ async function activateForProject(
     // Connect SFTP
     try {
         await sftpSync.setController(controller);
+        if (sftpSync.isConnected()) {
+            statusBar.setConnected(controller.name);
+        } else {
+            statusBar.setDisconnected(controller.name);
+        }
     } catch {
-        // Will retry on next upload attempt
+        statusBar.setDisconnected(controller.name);
     }
 
     // Download type definitions if version changed (or not yet cached)
     await maybeDownloadTypeDefs(context, controller);
+
+    // Start periodic connection check
+    startConnectionMonitor(controller);
 
     // Update launch.json
     const version = await typeDownloader.fetchControllerVersion(controller);
@@ -190,16 +198,40 @@ function setupBuildWatcher(context: vscode.ExtensionContext): void {
     const watcher = vscode.workspace.createFileSystemWatcher(pattern);
     const changeTimeouts = new Map<string, NodeJS.Timeout>();
 
+    // Batch uploads: collect changed files and upload together after a short delay
+    let batchTimeout: NodeJS.Timeout | undefined;
+    const pendingFiles = new Set<string>();
+
     const scheduleUpload = (uri: vscode.Uri) => {
-        const key = uri.fsPath;
-        if (changeTimeouts.has(key)) {
-            clearTimeout(changeTimeouts.get(key)!);
-        }
-        changeTimeouts.set(key, setTimeout(async () => {
-            changeTimeouts.delete(key);
-            if (!fs.existsSync(uri.fsPath)) { return; }
-            await sftpSync.uploadFile(uri.fsPath, workspaceRoot);
-        }, 800));
+        if (!fs.existsSync(uri.fsPath)) { return; }
+        pendingFiles.add(uri.fsPath);
+
+        if (batchTimeout) { clearTimeout(batchTimeout); }
+        batchTimeout = setTimeout(async () => {
+            batchTimeout = undefined;
+            const files = [...pendingFiles];
+            pendingFiles.clear();
+            if (files.length === 0) { return; }
+
+            const controller = await controllerManager.getActiveControllerWithPassword(workspaceRoot);
+            if (controller) { statusBar.setStatus(controller.name, `uploading ${files.length} file(s)…`); }
+
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `RumoAppDev: Uploading ${files.length} file(s)…`,
+                cancellable: false,
+            }, async (progress) => {
+                let done = 0;
+                for (const file of files) {
+                    const shortName = path.relative(path.join(workspaceRoot, 'build', 'type'), file);
+                    progress.report({ increment: (1 / files.length) * 100, message: shortName });
+                    await sftpSync.uploadFile(file, workspaceRoot);
+                    done++;
+                }
+            });
+
+            if (controller) { statusBar.setConnected(controller.name); }
+        }, 800);
     };
 
     watcher.onDidChange(scheduleUpload);
@@ -214,9 +246,14 @@ async function cmdUploadAllFiles(): Promise<void> {
     const workspaceRoot = getWorkspaceRoot();
     if (!workspaceRoot) { return; }
 
+    const controller = await controllerManager.getActiveControllerWithPassword(workspaceRoot);
+    if (controller) { statusBar.setStatus(controller.name, 'uploading…'); }
+
     try {
         await sftpSync.uploadAllFiles(workspaceRoot);
+        if (controller) { statusBar.setConnected(controller.name); }
     } catch (err) {
+        if (controller) { statusBar.setDisconnected(controller.name); }
         vscode.window.showErrorMessage(`RumoAppDev: Upload failed: ${(err as Error).message}`);
     }
 }
@@ -461,6 +498,41 @@ async function maybeDownloadTypeDefs(
     } catch {
         // Error already shown by typeDownloader
     }
+}
+
+// ── Connection Monitor ──────────────────────────────────────────────────────
+
+let _connectionMonitorTimer: NodeJS.Timeout | undefined;
+
+function startConnectionMonitor(controller: import('./controllerManager').ControllerConfigWithPassword): void {
+    // Clear any existing monitor
+    if (_connectionMonitorTimer) {
+        clearInterval(_connectionMonitorTimer);
+    }
+
+    _connectionMonitorTimer = setInterval(async () => {
+        const https = await import('https');
+        const reachable = await new Promise<boolean>(resolve => {
+            const auth = Buffer.from(`${controller.username}:${controller.password}`).toString('base64');
+            const req = https.default.request({
+                hostname: controller.host,
+                port: controller.httpsPort,
+                path: '/~/ws/0/dev/0/fb/develop/dp/nodeDebug/dat/value',
+                method: 'GET',
+                headers: { 'Authorization': `Basic ${auth}` },
+                rejectUnauthorized: false,
+            }, res => { res.resume(); resolve(res.statusCode === 200); });
+            req.on('error', () => resolve(false));
+            req.setTimeout(3000, () => { req.destroy(); resolve(false); });
+            req.end();
+        });
+
+        if (reachable) {
+            statusBar.setConnected(controller.name);
+        } else {
+            statusBar.setDisconnected(controller.name);
+        }
+    }, 30000); // Check every 30 seconds
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

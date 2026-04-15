@@ -43,6 +43,8 @@ export class TypeDownloader {
                     cancellable: false,
                 },
                 async () => {
+                    // Delete existing .d.ts files before downloading fresh ones
+                    this.deleteExistingDtsFiles(localTypesDir);
                     await this.downloadDirectory(sftp, REMOTE_DTS_PATH, localTypesDir);
                 }
             );
@@ -57,6 +59,22 @@ export class TypeDownloader {
             throw err;
         } finally {
             try { await sftp.end(); } catch { /* ignore */ }
+        }
+    }
+
+    /**
+     * Recursively deletes all .d.ts files in a local directory.
+     */
+    private deleteExistingDtsFiles(localPath: string): void {
+        if (!fs.existsSync(localPath)) { return; }
+        for (const entry of fs.readdirSync(localPath, { withFileTypes: true })) {
+            const entryPath = path.join(localPath, entry.name);
+            if (entry.isDirectory()) {
+                this.deleteExistingDtsFiles(entryPath);
+            } else if (entry.name.endsWith('.d.ts')) {
+                fs.unlinkSync(entryPath);
+                console.log(`RumoAppDev: Deleted old type def ${entryPath}`);
+            }
         }
     }
 

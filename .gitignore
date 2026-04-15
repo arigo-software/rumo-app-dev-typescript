@@ -3,3 +3,5 @@ node_modules/
 *.vsix
 .vscode-test/
 node_modules/
+node_modules_prod/
+rumo-app-dev-*.vsix

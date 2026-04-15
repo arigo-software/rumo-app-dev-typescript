@@ -38,7 +38,8 @@ export class DebugConfig {
         }
 
         const launchPath = path.join(vscodeDir, 'launch.json');
-        const ver = version ?? 'unknown';
+        // Strip surrounding quotes if version came from JSON API (e.g. '"1.9-1297"' → '1.9-1297')
+        const ver = (version ?? 'unknown').replace(/^"|"$/g, '');
         const remoteRoot = `/usr/lib/arigo/rumo/rumo_${ver}`;
 
         const newEntry: LaunchConfigEntry = {
@@ -48,7 +49,7 @@ export class DebugConfig {
             port: 9229,
             address: controller.host,
             protocol: 'inspector',
-            localRoot: '${workspaceFolder}',
+            localRoot: '${workspaceFolder}/build',
             remoteRoot,
             smartStep: true,
             sourceMapPathOverrides: {

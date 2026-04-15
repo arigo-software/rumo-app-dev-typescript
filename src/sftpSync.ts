@@ -172,18 +172,19 @@ export class SftpSync {
         await vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
-                title: `RumoAppDev: Uploading ${files.length} file(s)…`,
+                title: `RumoAppDev: Uploading to ${this.controller?.host}…`,
                 cancellable: false,
             },
             async (progress) => {
                 let done = 0;
                 for (const file of files) {
+                    const shortName = path.relative(path.join(workspaceRoot, BUILD_TYPE_DIR), file);
+                    progress.report({
+                        increment: (1 / files.length) * 100,
+                        message: shortName,
+                    });
                     await this.uploadFile(file, workspaceRoot);
                     done++;
-                    progress.report({
-                        increment: (done / files.length) * 100,
-                        message: `${done}/${files.length}`,
-                    });
                 }
             }
         );

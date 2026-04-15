@@ -9,3 +9,8 @@ vsc-extension-quickstart.md
 **/*.ts
 **/.vscode-test.*
 node_modules/**
+node_modules_dev/**
+node_modules_prod/**
+esbuild.js
+build-vsix.sh
+rumo-app-dev-*.vsix
