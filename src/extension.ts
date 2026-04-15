@@ -6,6 +6,7 @@ import { SftpSync } from './sftpSync';
 import { TypeDownloader } from './typeDownloader';
 import { ProjectSetup } from './projectSetup';
 import { DebugConfig } from './debugConfig';
+import { DebugMode } from './debugMode';
 import { StatusBar } from './statusBar';
 
 // ── State ──────────────────────────────────────────────────────────────────────
@@ -15,6 +16,7 @@ let sftpSync: SftpSync;
 let typeDownloader: TypeDownloader;
 let projectSetup: ProjectSetup;
 let debugConfig: DebugConfig;
+let debugMode: DebugMode;
 let statusBar: StatusBar;
 
 /** workspaceState key prefix for caching controller version. */
@@ -30,6 +32,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     typeDownloader = new TypeDownloader();
     projectSetup = new ProjectSetup();
     debugConfig = new DebugConfig();
+    debugMode = new DebugMode();
     statusBar = new StatusBar();
 
     context.subscriptions.push(statusBar);
@@ -51,6 +54,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ),
         vscode.commands.registerCommand('rumo-app-dev.initProject', () =>
             cmdInitProject(context)
+        ),
+        vscode.commands.registerCommand('rumo-app-dev.setDebugMode', () =>
+            cmdSetDebugMode(context)
         ),
     );
 
@@ -470,4 +476,19 @@ function getWorkspaceRoot(): string | undefined {
 
 export function getTsconfigPath(workspaceRoot: string): string {
     return path.join(workspaceRoot, 'tsconfig.json');
+}
+
+// ── cmdSetDebugMode ───────────────────────────────────────────────────────────
+
+async function cmdSetDebugMode(context: vscode.ExtensionContext): Promise<void> {
+    const workspaceRoot = getWorkspaceRoot();
+    if (!workspaceRoot) { return; }
+
+    const controller = await controllerManager.getActiveControllerWithPassword(workspaceRoot);
+    if (!controller) {
+        vscode.window.showWarningMessage('RumoAppDev: No active controller configured.');
+        return;
+    }
+
+    await debugMode.toggleDebugMode(controller);
 }

@@ -45,6 +45,10 @@
       {
         "command": "rumo-app-dev.initProject",
         "title": "RumoAppDev: Initialize Project"
+      },
+      {
+        "command": "rumo-app-dev.setDebugMode",
+        "title": "RumoAppDev: Set Debug Mode (none / inspect / inspect-brk)"
       }
     ],
     "configuration": {
@@ -110,7 +114,8 @@
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
     "eslint": "^9.13.0",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "@vscode/vsce": "^3.1.0"
   },
   "dependencies": {
     "ssh2-sftp-client": "^11.0.0"
