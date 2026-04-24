@@ -88,7 +88,7 @@ export class DebugMode {
             },
             {
                 label: 'inspect-brk',
-                description: 'Break on first line — use for init() debugging (resume quickly!)',
+                description: 'Break on first line — use for init() debugging',
             },
         ];
         const picked = await vscode.window.showQuickPick(items, {
@@ -126,7 +126,7 @@ export class DebugMode {
 
             let message = `Controller restarted. Debug mode: "${selected}".`;
             if (selected === 'inspect') {
-                message += ' Attach with F5. ⚠️ If debugging init(), resume quickly — Rumo has an app-init timeout.';
+                message += ' Attach with F5.';
             } else if (selected === 'inspect-brk') {
                 message += ' Attach with F5 immediately — execution is paused on first line.';
             }

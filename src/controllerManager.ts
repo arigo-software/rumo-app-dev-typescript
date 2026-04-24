@@ -25,8 +25,8 @@ interface RumoProjectConfig {
 // ── ControllerManager ──────────────────────────────────────────────────────────
 
 export class ControllerManager {
-    private static readonly CONFIG_KEY = 'rumoAppDev';
-    private static readonly SECRET_PREFIX = 'rumoAppDev.password.';
+    private static readonly CONFIG_KEY = 'rumoAppDevTypescript';
+    private static readonly SECRET_PREFIX = 'rumoAppDevTypescript.password.';
 
     constructor(private readonly context: vscode.ExtensionContext) {}
 

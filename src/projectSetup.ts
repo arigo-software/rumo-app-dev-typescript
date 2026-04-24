@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { TextEncoder } from 'util';
+import { execSync } from 'child_process';
 import { ControllerConfigWithPassword } from './controllerManager';
 
 // ── Templates ──────────────────────────────────────────────────────────────────
@@ -22,6 +24,10 @@ const TSCONFIG_CONTENT = JSON.stringify({
         forceConsistentCasingInFileNames: false,
         allowUnreachableCode: false,
         noEmitOnError: false,
+        // typeRoots: both src/node_modules/@types (downloaded from controller)
+        // and node_modules/@types (local devDependencies) are checked.
+        // This makes @types/node and other ambient types available without imports.
+        typeRoots: ['src/node_modules/@types', 'node_modules/@types'],
     },
     include: ['src'],
     exclude: ['build', 'web', 'static', 'node_modules'],
@@ -31,8 +37,22 @@ const GITIGNORE_ENTRIES = [
     'build/',
     'node_modules/',
     'src/**/*.d.ts',
+    'src/node_modules/',   // downloaded from controller (version-specific)
     '.vscode/sftp.json',
 ];
+
+const PACKAGE_JSON_CONTENT = JSON.stringify({
+    name: 'rumo-app',
+    version: '1.0.0',
+    private: true,
+    scripts: {
+        build: 'tsc -p tsconfig.json',
+        watch: 'tsc -p tsconfig.json --watch',
+    },
+    devDependencies: {
+        typescript: '^5.0.0',
+    },
+}, null, 2);
 
 const EXTENSIONS_JSON = JSON.stringify({
     recommendations: [
@@ -50,6 +70,7 @@ export class ProjectSetup {
         const dirs = [
             path.join(workspaceRoot, 'src', 'type'),
             path.join(workspaceRoot, 'build', 'type'),
+            path.join(workspaceRoot, 'controller', 'type'),
         ];
         for (const dir of dirs) {
             if (!fs.existsSync(dir)) {
@@ -59,15 +80,82 @@ export class ProjectSetup {
         }
     }
 
+    // ── package.json ─────────────────────────────────────────────────────────
+
+    public async ensurePackageJson(workspaceRoot: string, silent = false): Promise<void> {
+        const pkgPath = path.join(workspaceRoot, 'package.json');
+        if (fs.existsSync(pkgPath)) { return; }
+
+        fs.writeFileSync(pkgPath, PACKAGE_JSON_CONTENT, 'utf8');
+        if (!silent) {
+            vscode.window.showInformationMessage('RumoAppDev: package.json generated.');
+        }
+
+        // Run npm install to get typescript (and tsc) into node_modules
+        await vscode.window.withProgress(
+            {
+                location: vscode.ProgressLocation.Notification,
+                title: 'RumoAppDev: Installing TypeScript (npm install)…',
+                cancellable: false,
+            },
+            async () => {
+                try {
+                    execSync('npm install', { cwd: workspaceRoot, stdio: 'ignore' });
+                    if (!silent) {
+                        vscode.window.showInformationMessage('RumoAppDev: TypeScript installed.');
+                    }
+                } catch (err) {
+                    vscode.window.showErrorMessage(
+                        `RumoAppDev: npm install failed: ${(err as Error).message}. Run "npm install" manually.`
+                    );
+                }
+            }
+        );
+    }
+
     // ── tsconfig.json ────────────────────────────────────────────────────────
 
-    public ensureTsConfig(workspaceRoot: string, silent = false): void {
+    /**
+     * Writes tsconfig.json.
+     *
+     * If `archiveTsConfig` is provided (from the downloaded archive), it is used as the
+     * base and the project-specific fields are merged on top.
+     * Otherwise falls back to the built-in default template.
+     *
+     * Project-specific fields always set: baseUrl, rootDir, outDir, sourceMap, include, exclude
+     */
+    public ensureTsConfig(
+        workspaceRoot: string,
+        silent = false,
+        archiveTsConfig?: Record<string, unknown>
+    ): void {
         const tsconfigPath = path.join(workspaceRoot, 'tsconfig.json');
-        if (!fs.existsSync(tsconfigPath)) {
-            fs.writeFileSync(tsconfigPath, TSCONFIG_CONTENT, 'utf8');
-            if (!silent) {
-                vscode.window.showInformationMessage('RumoAppDev: tsconfig.json generated.');
-            }
+
+        let tsconfig: Record<string, unknown>;
+
+        if (archiveTsConfig) {
+            // Use archive tsconfig as base, merge project-specific fields on top
+            const baseCompilerOptions = (archiveTsConfig['compilerOptions'] as Record<string, unknown>) ?? {};
+            tsconfig = {
+                ...archiveTsConfig,
+                compilerOptions: {
+                    ...baseCompilerOptions,
+                    baseUrl: 'src',
+                    rootDir: 'src',
+                    outDir: 'build',
+                    sourceMap: true,
+                },
+                include: ['src'],
+                exclude: ['build', 'web', 'static', 'node_modules'],
+            };
+        } else {
+            // Fallback: built-in default
+            tsconfig = JSON.parse(TSCONFIG_CONTENT);
+        }
+
+        fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2), 'utf8');
+        if (!silent) {
+            vscode.window.showInformationMessage('RumoAppDev: tsconfig.json generated.');
         }
     }
 
@@ -104,10 +192,10 @@ export class ProjectSetup {
      * The password is written in plain text as required by the SFTP plugin.
      * This file must be listed in .gitignore!
      */
-    public generateSftpJson(
+    public async generateSftpJson(
         workspaceRoot: string,
         controller: ControllerConfigWithPassword
-    ): void {
+    ): Promise<void> {
         const vscodeDir = path.join(workspaceRoot, '.vscode');
         if (!fs.existsSync(vscodeDir)) {
             fs.mkdirSync(vscodeDir, { recursive: true });
@@ -121,9 +209,9 @@ export class ProjectSetup {
             username: controller.username,
             password: controller.password,
             remotePath: '/type/',
-            context: 'type/',
+            context: 'controller/type/',
             watcher: {
-                files: 'type/*',
+                files: 'controller/type/*',
                 autoUpload: false,
                 autoDelete: false,
             },
@@ -131,7 +219,32 @@ export class ProjectSetup {
         };
 
         const sftpPath = path.join(vscodeDir, 'sftp.json');
-        fs.writeFileSync(sftpPath, JSON.stringify(sftpConfig, null, 2), 'utf8');
+        const content = JSON.stringify(sftpConfig, null, 2);
+
+        const uri = vscode.Uri.file(sftpPath);
+
+        // Open the document first (before writing to disk) so VS Code tracks it
+        let doc = await vscode.workspace.openTextDocument(uri).then(d => d, () => null as vscode.TextDocument | null);
+
+        // Write file to disk
+        fs.writeFileSync(sftpPath, content, 'utf8');
+
+        // Apply the new content as an edit so VS Code marks the document dirty,
+        // then save — this triggers onDidSaveTextDocument which the SFTP plugin uses
+        // to reload its config (same as pressing Ctrl+S manually).
+        if (!doc) {
+            doc = await vscode.workspace.openTextDocument(uri);
+        }
+        const editor = await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: true });
+        await editor.edit(editBuilder => {
+            const fullRange = new vscode.Range(
+                doc!.lineAt(0).range.start,
+                doc!.lineAt(doc!.lineCount - 1).range.end
+            );
+            editBuilder.replace(fullRange, content);
+        });
+        await doc.save();
+
         console.log(`RumoAppDev: Generated .vscode/sftp.json for controller "${controller.name}"`);
     }
 
@@ -178,6 +291,7 @@ export class ProjectSetup {
         this.ensureDirectories(workspaceRoot);
         this.ensureTsConfig(workspaceRoot, true);
         this.ensureGitIgnore(workspaceRoot, true);
+        await this.ensurePackageJson(workspaceRoot, true);
     }
 
     // ── Full Project Setup (used by initProject wizard and switchController) ──
@@ -189,12 +303,14 @@ export class ProjectSetup {
     public async setupProjectFiles(
         workspaceRoot: string,
         controller: ControllerConfigWithPassword,
-        silent = false
+        silent = false,
+        archiveTsConfig?: Record<string, unknown>
     ): Promise<void> {
         this.ensureDirectories(workspaceRoot);
-        this.ensureTsConfig(workspaceRoot, silent);
+        await this.ensurePackageJson(workspaceRoot, silent);
+        this.ensureTsConfig(workspaceRoot, silent, archiveTsConfig);
         this.ensureGitIgnore(workspaceRoot, silent);
-        this.generateSftpJson(workspaceRoot, controller);
+        await this.generateSftpJson(workspaceRoot, controller);
         this.ensureExtensionsJson(workspaceRoot, silent);
     }
 }

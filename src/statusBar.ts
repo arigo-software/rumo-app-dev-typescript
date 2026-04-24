@@ -17,12 +17,12 @@ export class StatusBar {
         if (controllerName) {
             this.item.text = `$(server) ${controllerName}`;
             this.item.backgroundColor = undefined;
-            this.item.command = 'rumo-app-dev.switchController';
+            this.item.command = 'rumo-app-dev-typescript.switchController';
             this.item.tooltip = 'Click to switch Rumo controller';
         } else {
             this.item.text = '$(server) No controller';
             this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
-            this.item.command = 'rumo-app-dev.switchController';
+            this.item.command = 'rumo-app-dev-typescript.switchController';
             this.item.tooltip = 'No controller selected — click to select';
         }
     }
@@ -33,7 +33,7 @@ export class StatusBar {
     public setConnected(controllerName: string): void {
         this.item.text = `$(check) ${controllerName}`;
         this.item.backgroundColor = undefined;
-        this.item.command = 'rumo-app-dev.switchController';
+        this.item.command = 'rumo-app-dev-typescript.switchController';
         this.item.tooltip = `Connected to ${controllerName} — click to switch`;
     }
 
@@ -43,7 +43,7 @@ export class StatusBar {
     public setDisconnected(controllerName: string): void {
         this.item.text = `$(warning) ${controllerName} (offline)`;
         this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
-        this.item.command = 'rumo-app-dev.switchController';
+        this.item.command = 'rumo-app-dev-typescript.switchController';
         this.item.tooltip = `Cannot reach ${controllerName} — click to switch`;
     }
 
@@ -62,7 +62,7 @@ export class StatusBar {
     public updateNoProject(): void {
         this.item.text = '$(server) No Rumo project';
         this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
-        this.item.command = 'rumo-app-dev.initProject';
+        this.item.command = 'rumo-app-dev-typescript.initProject';
         this.item.tooltip = 'No Rumo project — click to initialize';
     }
 

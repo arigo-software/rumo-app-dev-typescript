@@ -1,8 +1,8 @@
 {
-  "name": "rumo-app-dev",
-  "displayName": "Rumo App Development",
+  "name": "rumo-app-dev-typescript",
+  "displayName": "Rumo App Development (TypeScript)",
   "description": "TypeScript app development for the ARIGO Rumo controller. Handles project setup, SFTP upload, type definitions download, and debug configuration.",
-  "version": "0.10.0",
+  "version": "0.33.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/arigo-software/rumo-app-dev.git"
@@ -23,38 +23,39 @@
   "author": "Arigo Software GmbH",
   "license": "MIT",
   "icon": "resources/icon.png",
+  "readme": "README.md",
   "publisher": "arigo-software",
   "contributes": {
     "commands": [
       {
-        "command": "rumo-app-dev.uploadAllFiles",
+        "command": "rumo-app-dev-typescript.uploadAllFiles",
         "title": "RumoAppDev: Upload All JavaScript Files"
       },
       {
-        "command": "rumo-app-dev.downloadTypeDefs",
+        "command": "rumo-app-dev-typescript.downloadTypeDefs",
         "title": "RumoAppDev: Download Type Definitions"
       },
       {
-        "command": "rumo-app-dev.switchController",
+        "command": "rumo-app-dev-typescript.switchController",
         "title": "RumoAppDev: Switch Controller"
       },
       {
-        "command": "rumo-app-dev.addController",
+        "command": "rumo-app-dev-typescript.addController",
         "title": "RumoAppDev: Add Controller"
       },
       {
-        "command": "rumo-app-dev.initProject",
+        "command": "rumo-app-dev-typescript.initProject",
         "title": "RumoAppDev: Initialize Project"
       },
       {
-        "command": "rumo-app-dev.setDebugMode",
+        "command": "rumo-app-dev-typescript.setDebugMode",
         "title": "RumoAppDev: Set Debug Mode (none / inspect / inspect-brk)"
       }
     ],
     "configuration": {
       "title": "Rumo App Development",
       "properties": {
-        "rumoAppDev.controllers": {
+        "rumoAppDevTypescript.controllers": {
           "type": "array",
           "default": [],
           "description": "List of Rumo controllers",
@@ -90,12 +91,6 @@
               "username"
             ]
           }
-        },
-        "rumoAppDev.activeController": {
-          "type": "string",
-          "default": "",
-          "markdownDeprecationMessage": "Use `rumo.config.json` in the project root to track the active controller.",
-          "description": "Deprecated: active controller is now stored in rumo.config.json"
         }
       }
     }
@@ -107,9 +102,11 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "package": "npm run compile && npx vsce package"
   },
   "devDependencies": {
+    "@types/lzma-native": "^4.0.4",
     "@types/mocha": "^10.0.9",
     "@types/node": "20.x",
     "@types/ssh2-sftp-client": "^9.0.4",
@@ -124,6 +121,8 @@
     "typescript": "^5.6.3"
   },
   "dependencies": {
-    "ssh2-sftp-client": "^11.0.0"
+    "lzma-native": "^8.0.6",
+    "ssh2-sftp-client": "^11.0.0",
+    "tar": "^7.5.13"
   }
 }

@@ -20,7 +20,7 @@ let debugMode: DebugMode;
 let statusBar: StatusBar;
 
 /** workspaceState key prefix for caching controller version. */
-const VERSION_CACHE_KEY = 'rumoAppDev.cachedVersion';
+const VERSION_CACHE_KEY = 'rumoAppDevTypescript.cachedVersion';
 
 // ── Activation ─────────────────────────────────────────────────────────────────
 
@@ -40,30 +40,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // Register commands
     context.subscriptions.push(
-        vscode.commands.registerCommand('rumo-app-dev.uploadAllFiles', () =>
+        vscode.commands.registerCommand('rumo-app-dev-typescript.uploadAllFiles', () =>
             cmdUploadAllFiles()
         ),
-        vscode.commands.registerCommand('rumo-app-dev.downloadTypeDefs', () =>
+        vscode.commands.registerCommand('rumo-app-dev-typescript.downloadTypeDefs', () =>
             cmdDownloadTypeDefs(context)
         ),
-        vscode.commands.registerCommand('rumo-app-dev.switchController', () =>
+        vscode.commands.registerCommand('rumo-app-dev-typescript.switchController', () =>
             cmdSwitchController(context)
         ),
-        vscode.commands.registerCommand('rumo-app-dev.addController', () =>
+        vscode.commands.registerCommand('rumo-app-dev-typescript.addController', () =>
             cmdAddController(context)
         ),
-        vscode.commands.registerCommand('rumo-app-dev.initProject', () =>
+        vscode.commands.registerCommand('rumo-app-dev-typescript.initProject', () =>
             cmdInitProject(context)
         ),
-        vscode.commands.registerCommand('rumo-app-dev.setDebugMode', () =>
+        vscode.commands.registerCommand('rumo-app-dev-typescript.setDebugMode', () =>
             cmdSetDebugMode(context)
         ),
     );
 
+    // Watch for new app files and insert boilerplate
+    setupAppFileWatcher(context);
+
     // Watch for VS Code settings changes (controller list in global settings)
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(async (e) => {
-            if (e.affectsConfiguration('rumoAppDev')) {
+            if (e.affectsConfiguration('rumoAppDevTypescript')) {
                 await onControllerConfigChanged(context);
             }
         })
@@ -377,26 +380,27 @@ async function cmdInitProject(context: vscode.ExtensionContext): Promise<void> {
         return;
     }
 
-    // Step 3: Create project files
-    await projectSetup.setupProjectFiles(workspaceRoot, controller, false);
-
-    // Write rumo.config.json (activeController)
-    controllerManager.setActiveControllerName(workspaceRoot, controllerName!);
-
-    // Write launch.json
+    // Step 3: Download d.ts + get archive tsconfig
+    let archiveTsConfig: Record<string, unknown> | undefined;
     const version = await typeDownloader.fetchControllerVersion(controller);
-    await debugConfig.updateLaunchJson(controller, workspaceRoot, version);
-
-    // Step 4: Start d.ts download
     try {
-        await typeDownloader.downloadTypeDefs(controller, workspaceRoot);
+        archiveTsConfig = await typeDownloader.downloadTypeDefs(controller, workspaceRoot);
         if (version) {
             const cacheKey = `${VERSION_CACHE_KEY}.${controller.name}`;
             await context.workspaceState.update(cacheKey, version);
         }
     } catch {
-        // Error already shown
+        // Error already shown, continue with fallback tsconfig
     }
+
+    // Step 4: Create project files (tsconfig uses archive base if available)
+    await projectSetup.setupProjectFiles(workspaceRoot, controller, false, archiveTsConfig);
+
+    // Write rumo.config.json (activeController)
+    controllerManager.setActiveControllerName(workspaceRoot, controllerName!);
+
+    // Write launch.json
+    await debugConfig.updateLaunchJson(controller, workspaceRoot, version);
 
     // Connect SFTP
     try {
@@ -440,15 +444,18 @@ async function performControllerSwitch(
     }
 
     // 2. Regenerate .vscode/sftp.json
-    projectSetup.generateSftpJson(workspaceRoot, controller);
+    await projectSetup.generateSftpJson(workspaceRoot, controller);
 
     // 3. Update .vscode/launch.json
     const version = await typeDownloader.fetchControllerVersion(controller);
     await debugConfig.updateLaunchJson(controller, workspaceRoot, version);
 
-    // 4. Re-download d.ts
+    // 4. Re-download d.ts + update tsconfig
     try {
-        await typeDownloader.downloadTypeDefs(controller, workspaceRoot);
+        const archiveTsConfig = await typeDownloader.downloadTypeDefs(controller, workspaceRoot);
+        if (archiveTsConfig) {
+            projectSetup.ensureTsConfig(workspaceRoot, true, archiveTsConfig);
+        }
         if (version) {
             const cacheKey = `${VERSION_CACHE_KEY}.${controller.name}`;
             await context.workspaceState.update(cacheKey, version);
@@ -548,6 +555,125 @@ function getWorkspaceRoot(): string | undefined {
 
 export function getTsconfigPath(workspaceRoot: string): string {
     return path.join(workspaceRoot, 'tsconfig.json');
+}
+
+// ── App File Watcher (boilerplate insertion) ─────────────────────────────────
+
+const DEFAULT_APP_BOILERPLATE = `
+import { AppDefinition, AppHookResult, AppInstance, Request } from "lib/appDef";
+import { callDpUpdate, getAsync, unpromisify } from 'lib/appUtil';
+import _out from "lib/out";
+const out = _out("MyApp");
+
+interface MyAppInstance extends AppInstance<{
+    //input
+    in1: boolean;
+    //inputOutput
+
+    //output
+    out1: boolean;
+    cpuUsage: number;
+
+}> {
+    //Definition of internal properties used in the app instance
+    //best practice is to prefix them with _ to avoid name clashes with input/output properties
+    _id: any;
+    _intervalId: NodeJS.Timeout;
+}
+
+
+const appDef: AppDefinition = {
+    input: {
+        in1: { type: "boolean", persistent: true, default: true }
+    },
+    output: {
+        out1: "boolean",
+        cpuUsage: "number"
+    },
+    createSync: function () {},
+    init: unpromisify(init),
+    stop: unpromisify(cleanup),
+    delete: unpromisify(cleanup),
+    callback: true,
+};
+
+
+async function cleanup(this: MyAppInstance): Promise<void> {
+    clearInterval(this._intervalId);
+}
+
+async function init(this: MyAppInstance, request: Request): Promise<AppHookResult> {
+    this._id = request.body.meta.id;
+
+    this._intervalId = setInterval(this.callback(unpromisify(onTimeout)), 2000);
+}
+
+async function onTimeout(this: MyAppInstance): Promise<AppHookResult> {
+    this.cpuUsage = (await getAsync("/~/ws/0/dev/0/fb/Setup/dp/cpuUsage/dat/value")).body;
+    out.info("onTimeout cpuUsage", this.cpuUsage);
+    return "cpuUsage";
+}
+
+appDef.update = callDpUpdate(appDef, {
+    in1: unpromisify(updateIn1),
+});
+
+async function updateIn1(this: MyAppInstance, request: Request): Promise<AppHookResult> {
+    if (request.fromDatabase) return false;
+    this.out1 = this.in1;
+    return "out1";
+}
+
+//-------------------------------------------------------------------------------------------------
+export = appDef;
+`.trimStart();
+
+const LOCAL_APP_BOILERPLATE = DEFAULT_APP_BOILERPLATE;
+
+function setupAppFileWatcher(context: vscode.ExtensionContext): void {
+    const insertBoilerplate = async (uri: vscode.Uri) => {
+        try {
+            await new Promise(r => setTimeout(r, 300));
+
+            // Open document and check content via VS Code (not disk stat)
+            const doc = await vscode.workspace.openTextDocument(uri);
+            if (doc.getText().trim().length > 0) { return; }
+
+            const isDefault = path.basename(uri.fsPath) === '_default.ts';
+            const boilerplate = isDefault ? DEFAULT_APP_BOILERPLATE : LOCAL_APP_BOILERPLATE;
+
+            // Insert via editor API so VS Code sees the change immediately
+            const editor = await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true });
+            await editor.edit(editBuilder => {
+                editBuilder.insert(new vscode.Position(0, 0), boilerplate);
+            });
+            await doc.save();
+
+            console.log(`RumoAppDev: Inserted boilerplate into ${uri.fsPath}`);
+        } catch (err) {
+            console.error(`RumoAppDev: Failed to insert boilerplate: ${(err as Error).message}`);
+        }
+    };
+
+    const watcherDefault = vscode.workspace.createFileSystemWatcher('**/type/app/**/_default.ts');
+    const watcherLocal = vscode.workspace.createFileSystemWatcher('**/type/app/**/local.ts');
+
+    watcherDefault.onDidCreate(insertBoilerplate);
+    watcherLocal.onDidCreate(insertBoilerplate);
+
+    // Also trigger on document open — catches cases where watcher fires late
+    context.subscriptions.push(
+        vscode.workspace.onDidOpenTextDocument(async (doc) => {
+            const name = path.basename(doc.uri.fsPath);
+            const inTypeDir = doc.uri.fsPath.includes(`${path.sep}type${path.sep}app${path.sep}`);
+            if (name !== '_default.ts' && name !== 'local.ts') { return; }
+            if (!inTypeDir) { return; }
+            if (doc.getText().trim().length > 0) { return; }
+            await insertBoilerplate(doc.uri);
+        })
+    );
+
+    context.subscriptions.push(watcherDefault, watcherLocal);
 }
 
 // ── cmdSetDebugMode ───────────────────────────────────────────────────────────

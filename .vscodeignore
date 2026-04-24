@@ -8,7 +8,6 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
-node_modules/**
 node_modules_dev/**
 node_modules_prod/**
 esbuild.js

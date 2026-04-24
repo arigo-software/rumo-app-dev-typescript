@@ -1,33 +1,48 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import Client from 'ssh2-sftp-client';
+import * as tar from 'tar';
+import * as lzma from 'lzma-native';
 import { ControllerConfigWithPassword } from './controllerManager';
 
-const REMOTE_DTS_PATH = '/user/dts';
+const REMOTE_DTS_ARCHIVE = '/ts/data.tar.xz';
 const LOCAL_DTS_DIR = 'src';
 
 export class TypeDownloader {
     /**
-     * Downloads all .d.ts files from the controller's /user/dts/ directory
-     * into the local types/ folder, replacing what's there.
+     * Downloads the type definitions archive from the controller,
+     * extracts the `types/` folder into `src/`, and returns the
+     * tsconfig.json from the archive root (to be used as build base).
      *
-     * @param controller  Active controller configuration
-     * @param workspaceRoot  Absolute path to the workspace root
+     * Archive layout (after extraction into a temp dir):
+     *   tsconfig.json        ← compiler settings from the controller build
+     *   types/               ← .d.ts files + node_modules/@types
+     *     lib/
+     *     common/
+     *     node_modules/
+     *
+     * @param controller      Active controller configuration
+     * @param workspaceRoot   Absolute path to the workspace root
+     * @returns               Parsed tsconfig compilerOptions from the archive, or undefined on failure
      */
     public async downloadTypeDefs(
         controller: ControllerConfigWithPassword,
         workspaceRoot: string
-    ): Promise<void> {
-        // d.ts files land in src/ — baseUrl: "src" makes bare imports resolve correctly.
-        const localTypesDir = path.join(workspaceRoot, LOCAL_DTS_DIR);
+    ): Promise<Record<string, unknown> | undefined> {
+        const localSrcDir = path.join(workspaceRoot, LOCAL_DTS_DIR);
 
         // Ensure local src/ directory exists
-        if (!fs.existsSync(localTypesDir)) {
-            fs.mkdirSync(localTypesDir, { recursive: true });
+        if (!fs.existsSync(localSrcDir)) {
+            fs.mkdirSync(localSrcDir, { recursive: true });
         }
 
         const sftp = new Client();
+        const tmpFile = path.join(os.tmpdir(), `rumo-dts-${Date.now()}.tar.xz`);
+        const tmpExtractDir = path.join(os.tmpdir(), `rumo-dts-extract-${Date.now()}`);
+        fs.mkdirSync(tmpExtractDir, { recursive: true });
+
         try {
             await sftp.connect({
                 host: controller.host,
@@ -36,6 +51,19 @@ export class TypeDownloader {
                 password: controller.password,
             });
 
+            // Check if the archive exists on the controller
+            try {
+                await sftp.stat(REMOTE_DTS_ARCHIVE);
+            } catch {
+                vscode.window.showErrorMessage(
+                    `RumoAppDev: Controller "${controller.name}": Firmware version is too old and not supported by this plugin. ` +
+                    `Please update the controller firmware to use TypeScript development.`
+                );
+                return undefined;
+            }
+
+            let archiveTsConfig: Record<string, unknown> | undefined;
+
             await vscode.window.withProgress(
                 {
                     location: vscode.ProgressLocation.Notification,
@@ -43,15 +71,52 @@ export class TypeDownloader {
                     cancellable: false,
                 },
                 async () => {
-                    // Delete existing .d.ts files before downloading fresh ones
-                    this.deleteExistingDtsFiles(localTypesDir);
-                    await this.downloadDirectory(sftp, REMOTE_DTS_PATH, localTypesDir);
+                    // Download archive
+                    await sftp.get(REMOTE_DTS_ARCHIVE, tmpFile);
+
+                    // Extract into temp dir
+                    await new Promise<void>((resolve, reject) => {
+                        const input = fs.createReadStream(tmpFile);
+                        const decompressor = lzma.createDecompressor();
+                        const extract = tar.x({ cwd: tmpExtractDir });
+                        extract.on('finish', resolve);
+                        extract.on('error', reject);
+                        decompressor.on('error', reject);
+                        input.pipe(decompressor).pipe(extract as unknown as NodeJS.WritableStream);
+                    });
+
+                    // Read tsconfig.json from archive root
+                    const archiveTsConfigPath = path.join(tmpExtractDir, 'tsconfig.json');
+                    if (fs.existsSync(archiveTsConfigPath)) {
+                        try {
+                            archiveTsConfig = JSON.parse(fs.readFileSync(archiveTsConfigPath, 'utf8'));
+                        } catch {
+                            console.warn('RumoAppDev: Could not parse tsconfig.json from archive');
+                        }
+                    }
+
+                    // Clear existing .d.ts files and node_modules from src/
+                    this.deleteExistingDtsFiles(localSrcDir);
+                    const srcNodeModules = path.join(localSrcDir, 'node_modules');
+                    if (fs.existsSync(srcNodeModules)) {
+                        fs.rmSync(srcNodeModules, { recursive: true, force: true });
+                    }
+
+                    // Copy types/ content into src/
+                    const extractedTypesDir = path.join(tmpExtractDir, 'types');
+                    if (fs.existsSync(extractedTypesDir)) {
+                        this.copyDirRecursive(extractedTypesDir, localSrcDir);
+                    } else {
+                        console.warn('RumoAppDev: No types/ folder found in archive');
+                    }
                 }
             );
 
             vscode.window.showInformationMessage(
                 `RumoAppDev: Type definitions downloaded from ${controller.name}.`
             );
+
+            return archiveTsConfig;
         } catch (err) {
             vscode.window.showErrorMessage(
                 `RumoAppDev: Failed to download type definitions: ${(err as Error).message}`
@@ -59,6 +124,26 @@ export class TypeDownloader {
             throw err;
         } finally {
             try { await sftp.end(); } catch { /* ignore */ }
+            try { if (fs.existsSync(tmpFile)) { fs.unlinkSync(tmpFile); } } catch { /* ignore */ }
+            try { if (fs.existsSync(tmpExtractDir)) { fs.rmSync(tmpExtractDir, { recursive: true, force: true }); } } catch { /* ignore */ }
+        }
+    }
+
+    /**
+     * Recursively copies a directory.
+     */
+    private copyDirRecursive(src: string, dest: string): void {
+        if (!fs.existsSync(dest)) {
+            fs.mkdirSync(dest, { recursive: true });
+        }
+        for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+            const srcPath = path.join(src, entry.name);
+            const destPath = path.join(dest, entry.name);
+            if (entry.isDirectory()) {
+                this.copyDirRecursive(srcPath, destPath);
+            } else {
+                fs.copyFileSync(srcPath, destPath);
+            }
         }
     }
 
@@ -69,49 +154,11 @@ export class TypeDownloader {
         if (!fs.existsSync(localPath)) { return; }
         for (const entry of fs.readdirSync(localPath, { withFileTypes: true })) {
             const entryPath = path.join(localPath, entry.name);
-            if (entry.isDirectory()) {
+            if (entry.isDirectory() && entry.name !== 'node_modules') {
                 this.deleteExistingDtsFiles(entryPath);
             } else if (entry.name.endsWith('.d.ts')) {
                 fs.unlinkSync(entryPath);
                 console.log(`RumoAppDev: Deleted old type def ${entryPath}`);
-            }
-        }
-    }
-
-    /**
-     * Recursively downloads a remote directory to a local path.
-     */
-    private async downloadDirectory(
-        sftp: Client,
-        remotePath: string,
-        localPath: string
-    ): Promise<void> {
-        // Ensure local directory exists
-        if (!fs.existsSync(localPath)) {
-            fs.mkdirSync(localPath, { recursive: true });
-        }
-
-        let entries: Client.FileInfo[];
-        try {
-            entries = await sftp.list(remotePath);
-        } catch (err) {
-            console.warn(`RumoAppDev: Could not list remote directory ${remotePath}: ${(err as Error).message}`);
-            return;
-        }
-
-        for (const entry of entries) {
-            const remoteEntryPath = `${remotePath}/${entry.name}`;
-            const localEntryPath = path.join(localPath, entry.name);
-
-            if (entry.type === 'd') {
-                await this.downloadDirectory(sftp, remoteEntryPath, localEntryPath);
-            } else {
-                try {
-                    await sftp.get(remoteEntryPath, localEntryPath);
-                    console.log(`RumoAppDev: Downloaded ${remoteEntryPath} → ${localEntryPath}`);
-                } catch (err) {
-                    console.error(`RumoAppDev: Error downloading ${remoteEntryPath}: ${(err as Error).message}`);
-                }
             }
         }
     }
