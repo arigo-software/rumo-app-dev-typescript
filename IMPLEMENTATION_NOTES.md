@@ -118,7 +118,29 @@ In `extension.ts`:
 6. Status Bar aktualisieren
 7. SFTP-Verbindung neu aufbauen
 
-### 7. Restliche Features (unverändert)
+### 7. Controller bearbeiten (`rumo-app-dev.editController`)
+
+1. QuickPick aus allen konfigurierten Steuerungen
+2. Wizard mit vorausgefüllten Feldern (Name, Host, Ports, Username, Passwort)
+3. Passwort leer lassen → aktuelles Passwort bleibt erhalten
+4. Bei Namensänderung: Alten Eintrag + altes Passwort löschen, neuen anlegen
+5. Settings + SecretStorage aktualisieren
+6. Wenn aktive Steuerung betroffen → automatischer Reconnect
+
+### 8. Controller-Passwort ändern (`rumo-app-dev.changePassword`)
+
+1. QuickPick aus allen konfigurierten Steuerungen
+2. Neues Passwort eingeben (SecretStorage-geschützt)
+3. Wenn aktive Steuerung → SFTP-Reconnect mit neuem Passwort
+
+### 9. Controller löschen (`rumo-app-dev.deleteController`)
+
+1. QuickPick aus allen konfigurierten Steuerungen
+2. Bestätigung (modal dialog)
+3. Aus Settings + SecretStorage entfernen
+4. War aktive Steuerung → Status Bar auf "kein Controller" setzen + Wechsel anbieten
+
+### 10. Restliche Features (unverändert)
 
 - **SFTP Auto-Upload** (`sftpSync.ts`): File Watcher auf `build/type/`, Debounce 800ms, Auto-Reconnect
 - **d.ts Download** (`typeDownloader.ts`): SFTP von `/user/dts/`, Versions-Caching im workspaceState

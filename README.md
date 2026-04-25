@@ -64,13 +64,38 @@ code-server --install-extension rumo-app-dev-typescript.latest.vsix
    - **Password**: User password
 4. Choose your app directory (if developing multiple apps)
 
-### 2. Add a Controller
+### 2. Manage Controllers
 
-If you need to work with multiple controllers:
+If you need to work with multiple controllers or update existing ones:
 
-1. Command Palette → **"Rumo: Add Controller"**
-2. Enter controller details as above
-3. Switch between controllers anytime via **"Rumo: Switch Controller"**
+#### Add a Controller
+1. Command Palette → **"RumoAppDev: Add Controller"**
+2. Enter controller details (name, host, ports, username, password)
+3. In a Rumo project, the new controller is automatically set as active
+
+#### Switch Active Controller
+1. Command Palette → **"RumoAppDev: Switch Controller"**
+2. Select from the list — SFTP, type definitions and debug config are updated automatically
+
+#### Edit a Controller
+1. Command Palette → **"RumoAppDev: Edit Controller"**
+2. Select the controller to edit
+3. Update any field (name, host, ports, username, password)
+4. Leave the password field empty to keep the current password
+5. If the active controller was edited, the connection is automatically refreshed
+
+#### Change Controller Password
+1. Command Palette → **"RumoAppDev: Change Controller Password"**
+2. Select the controller
+3. Enter the new password — stored securely in VS Code SecretStorage
+4. If the active controller, SFTP reconnects automatically
+
+#### Delete a Controller
+1. Command Palette → **"RumoAppDev: Delete Controller"**
+2. Select the controller to delete
+3. Confirm deletion (irreversible)
+4. Passwords are removed from SecretStorage
+5. If the active controller was deleted, you are prompted to switch to another
 
 ### 3. Build & Deploy
 
