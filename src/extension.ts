@@ -670,71 +670,141 @@ export function getTsconfigPath(workspaceRoot: string): string {
 // ── App File Watcher (boilerplate insertion) ─────────────────────────────────
 
 const DEFAULT_APP_BOILERPLATE = `
+// Import core app framework types and utilities
 import { AppDefinition, AppHookResult, AppInstance, Request } from "lib/appDef";
 import { callDpUpdate, getAsync, unpromisify } from 'lib/appUtil';
 import _out from "lib/out";
+import { RumoUrl } from "lib/rumoUrl";
+import { SubscriptionManager } from "lib/subscriptionManager";
+
+// Initialize logger for this app
 const out = _out("MyApp");
 
+/**
+ * App instance interface defining all input, output, and internal properties.
+ * Extends the base AppInstance with strongly-typed datapoints.
+ */
 interface MyAppInstance extends AppInstance<{
     //input
-    in1: boolean;
+    in1: boolean; // Input datapoint that triggers updates
     //inputOutput
 
     //output
-    out1: boolean;
-    cpuUsage: number;
+    out1: boolean; // Output mirrors the in1 input
+    cpuUsage: number; // CPU usage percentage from system app
+    freeMem: number; // Available free memory from system app
 
 }> {
     //Definition of internal properties used in the app instance
     //best practice is to prefix them with _ to avoid name clashes with input/output properties
-    _id: any;
-    _intervalId: NodeJS.Timeout;
+    _subscriptionManager: SubscriptionManager; // Manages subscriptions on database objects
+    _id: any; // Unique identifier for this app instance
+    _intervalId: NodeJS.Timeout; // Timer ID for periodic CPU polling
 }
 
 
+/**
+ * Main app definition object that describes the app's lifecycle and datapoints.
+ * This is the exported configuration that the framework uses to instantiate and manage the app.
+ */
 const appDef: AppDefinition = {
+    // Define input datapoints with their types and persistence
     input: {
-        in1: { type: "boolean", persistent: true, default: true }
+        in1: { type: "boolean", persistent: true, default: true } // Persistent boolean input with default value
     },
+    // Define output datapoints (write-only from app perspective)
     output: {
-        out1: "boolean",
-        cpuUsage: "number"
+        out1: "boolean", // Mirrors in1 value
+        cpuUsage: "number", // System CPU usage
+        freeMem: "number", // System free memory
     },
-    createSync: function () {},
-    init: unpromisify(init),
-    stop: unpromisify(cleanup),
-    delete: unpromisify(cleanup),
-    callback: true,
+    createSync: function () {}, // Synchronous creation hook (empty)
+    init: unpromisify(init), // Async initialization hook converted to callback function
+    stop: unpromisify(cleanup), // Called when app stops
+    delete: unpromisify(cleanup), // Called when app is deleted
+    callback: true, // Enable async callback support
+    callbackSync: true, // Enable synchronous callback support
 };
 
 
+/**
+ * Cleanup function called when app stops or is deleted.
+ * Releases resources including timers and datapoint subscriptions.
+ */
 async function cleanup(this: MyAppInstance): Promise<void> {
+    // Stop the periodic CPU polling timer
     clearInterval(this._intervalId);
+    // Close all active datapoint subscriptions
+    this._subscriptionManager.close();
 }
 
+/**
+ * Initialization function called when app instance is created.
+ * Sets up subscriptions and periodic timers for monitoring system resources.
+ */
 async function init(this: MyAppInstance, request: Request): Promise<AppHookResult> {
+    // Store the app instance ID from the request metadata
     this._id = request.body.meta.id;
 
+    // Initialize subscription manager and subscribe to free memory datapoint
+    // The subscription will automatically receive updates when the value changes
+    this._subscriptionManager = new SubscriptionManager();
+    const subscription = this._subscriptionManager.subscribe(new RumoUrl("/~/ws/0/dev/0/fb/Setup/dp/freeMem/dat/value"));
+    subscription.on("update", onFreeMemUpdate(this));
+
+    // Set up periodic timer to poll CPU usage every 2 seconds
+    // callback() wraps the async function to work with the app framework
     this._intervalId = setInterval(this.callback(unpromisify(onTimeout)), 2000);
 }
 
+/**
+ * Handler for free memory datapoint updates.
+ * Returns a closure that updates the app's freeMem output when the subscribed datapoint changes.
+ */
+function onFreeMemUpdate(that: MyAppInstance) { return function( freeMem: number){
+    // Use callbackSync to execute within the app's synchronous callback context
+    that.callbackSync(function (this: MyAppInstance){
+        // Update the output datapoint with new free memory value
+        this.freeMem = freeMem;
+        out.info("freeMem update", freeMem);
+        // Return name of updated datapoint to notify framework
+        return "freeMem";
+    })();
+};}
+
+/**
+ * Periodic timer callback that polls CPU usage.
+ * Called every 2 seconds by the interval timer set up in init().
+ */
 async function onTimeout(this: MyAppInstance): Promise<AppHookResult> {
+    // Fetch current CPU usage from system datapoint
     this.cpuUsage = (await getAsync("/~/ws/0/dev/0/fb/Setup/dp/cpuUsage/dat/value")).body;
     out.info("onTimeout cpuUsage", this.cpuUsage);
+    // Return name of updated datapoint to notify framework
     return "cpuUsage";
 }
 
+// Define update handlers for input datapoints
+// These functions are called when input values change
 appDef.update = callDpUpdate(appDef, {
-    in1: unpromisify(updateIn1),
+    in1: unpromisify(updateIn1), // Handler for in1 input changes
 });
 
+/**
+ * Update handler called when in1 input datapoint changes.
+ * Mirrors the input value to the out1 output datapoint.
+ */
 async function updateIn1(this: MyAppInstance, request: Request): Promise<AppHookResult> {
+    // Ignore updates coming from database initialization (only process real-time changes)
     if (request.fromDatabase) return false;
+    // Mirror input to output
     this.out1 = this.in1;
+    // Return name of updated datapoint
     return "out1";
 }
 
 //-------------------------------------------------------------------------------------------------
+// Export the app definition for the framework to load
 export = appDef;
 `.trimStart();
 
