@@ -2,13 +2,7 @@
 
 ## Offen
 
-- [ ] **Doku: Deploy to Controller** — Beschreibung korrigieren: Deploy passiert automatisch durch das Plugin selbst (kompilierte Daten → Controller), nicht SFTP-Plugin
 - [ ] **Doku: App in Projekteditor einfügen** — beschreiben wie eine neue App in den Projekteditor eingefügt wird
-- [ ] **Plugin: DTS + tsconfig auf Steuerung speichern** — `.d.ts` Dateien und `tsconfig.json` auf dem Controller ablegen (nicht nur lokal)
-- [ ] **Plugin: tsconfig hochladen** — beim Deploy auch `tsconfig.json` auf den Controller hochladen (implementieren)
-- [ ] **Doku + Plugin: neuer Subscription Manager** — ersetzt `autil.Subscriptions` (alt bleibt deprecated); in arigo-app-framework.md beschreiben + in Boilerplate-Code einfügen
-- [ ] **Doku: Installationsbeschreibung anpassen** — arigo-app-development.md: Installationsschritte für das Plugin aktualisieren
-- [ ] **Plugin: ESLint** — ESLint-Konfiguration für Rumo-App-Projekte einrichten/mitliefern
 - [ ] **Sammeln läuft noch** — Simon sammelt weitere Punkte zu arigo-app-development.md
 
 ## Wenn alle Todos erledigt: Release 1.0
@@ -29,3 +23,9 @@
 - [x] README + arigo-app-development.md angepasst
 - [x] Falsche Command Palette Commands entfernt (Rumo: Build, Deploy, Attach Debugger)
 - [x] Deploy/Debug Workflow korrekt dokumentiert (SFTP-Plugin + Standard VS Code Debug)
+- [x] Doku + Plugin: neuer Subscription Manager (arigo-app-framework.md + Boilerplate)
+- [x] Doku: Installationsbeschreibung anpassen (GitHub Releases)
+- [x] Doku: Deploy to Controller — korrigiert (Plugin, nicht SFTP-Plugin)
+- [x] Plugin: DTS + tsconfig auf Steuerung speichern
+- [x] Plugin: tsconfig hochladen beim Deploy
+- [x] Plugin: ESLint-Konfiguration
