@@ -5,6 +5,21 @@ import { TextEncoder } from 'util';
 import { execSync } from 'child_process';
 import { ControllerConfigWithPassword } from './controllerManager';
 
+// ── Versioned copilot-instructions ───────────────────────────────────────────
+// Bump COPILOT_INSTRUCTIONS_VERSION whenever the content changes.
+// The plugin will update the file in user projects if the version is outdated.
+const COPILOT_INSTRUCTIONS_VERSION = '1';
+const COPILOT_INSTRUCTIONS_VERSION_MARKER = `<!-- rumo-app-dev-version: ${COPILOT_INSTRUCTIONS_VERSION} -->`;
+
+// Read the bundled copilot-instructions.md from the extension's resources folder
+function getBundledCopilotInstructions(context: vscode.ExtensionContext): string {
+    const resourcePath = path.join(context.extensionPath, 'resources', 'copilot-instructions.md');
+    if (fs.existsSync(resourcePath)) {
+        return fs.readFileSync(resourcePath, 'utf8');
+    }
+    return '';
+}
+
 // ── Templates ──────────────────────────────────────────────────────────────────
 
 const TSCONFIG_CONTENT = JSON.stringify({
@@ -280,6 +295,55 @@ export class ProjectSetup {
         }
     }
 
+    // ── .github/copilot-instructions.md ──────────────────────────────────
+
+    /**
+     * Writes (or updates) .github/copilot-instructions.md in the user's project.
+     * If the file already exists and contains a version marker, it is only
+     * overwritten when the bundled version is newer.
+     */
+    public ensureCopilotInstructions(workspaceRoot: string, context: vscode.ExtensionContext, silent = false): void {
+        const githubDir = path.join(workspaceRoot, '.github');
+        const targetPath = path.join(githubDir, 'copilot-instructions.md');
+
+        const bundledContent = getBundledCopilotInstructions(context);
+        if (!bundledContent) { return; } // no bundled file — skip
+
+        const bundledWithMarker = `${COPILOT_INSTRUCTIONS_VERSION_MARKER}\n${bundledContent}`;
+
+        // Check existing version
+        if (fs.existsSync(targetPath)) {
+            const existing = fs.readFileSync(targetPath, 'utf8');
+            const match = existing.match(/<!-- rumo-app-dev-version: (\d+) -->/);
+            if (match) {
+                const existingVersion = parseInt(match[1], 10);
+                const currentVersion = parseInt(COPILOT_INSTRUCTIONS_VERSION, 10);
+                if (existingVersion >= currentVersion) {
+                    return; // already up to date
+                }
+                // Outdated — update
+                if (!silent) {
+                    vscode.window.showInformationMessage(
+                        `RumoAppDev: Updating .github/copilot-instructions.md (v${existingVersion} → v${currentVersion})`
+                    );
+                }
+            }
+            // No version marker — don't overwrite (user-managed file)
+            else {
+                return;
+            }
+        }
+
+        // Write new file
+        if (!fs.existsSync(githubDir)) {
+            fs.mkdirSync(githubDir, { recursive: true });
+        }
+        fs.writeFileSync(targetPath, bundledWithMarker, 'utf8');
+        if (!silent) {
+            vscode.window.showInformationMessage('RumoAppDev: .github/copilot-instructions.md written.');
+        }
+    }
+
     // ── Silent Auto-Init (called at extension startup) ────────────────────────
 
     /**
@@ -287,11 +351,14 @@ export class ProjectSetup {
      * Does NOT prompt the user, does NOT generate sftp.json.
      * Called on every extension activation for any workspace.
      */
-    public async silentInit(workspaceRoot: string): Promise<void> {
+    public async silentInit(workspaceRoot: string, context?: vscode.ExtensionContext): Promise<void> {
         this.ensureDirectories(workspaceRoot);
         this.ensureTsConfig(workspaceRoot, true);
         this.ensureGitIgnore(workspaceRoot, true);
         await this.ensurePackageJson(workspaceRoot, true);
+        if (context) {
+            this.ensureCopilotInstructions(workspaceRoot, context, true);
+        }
     }
 
     // ── Full Project Setup (used by initProject wizard and switchController) ──
@@ -304,7 +371,8 @@ export class ProjectSetup {
         workspaceRoot: string,
         controller: ControllerConfigWithPassword,
         silent = false,
-        archiveTsConfig?: Record<string, unknown>
+        archiveTsConfig?: Record<string, unknown>,
+        context?: vscode.ExtensionContext
     ): Promise<void> {
         this.ensureDirectories(workspaceRoot);
         await this.ensurePackageJson(workspaceRoot, silent);
@@ -312,5 +380,8 @@ export class ProjectSetup {
         this.ensureGitIgnore(workspaceRoot, silent);
         await this.generateSftpJson(workspaceRoot, controller);
         this.ensureExtensionsJson(workspaceRoot, silent);
+        if (context) {
+            this.ensureCopilotInstructions(workspaceRoot, context, silent);
+        }
     }
 }

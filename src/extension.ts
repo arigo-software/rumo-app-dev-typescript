@@ -118,7 +118,7 @@ async function activateForProject(
     workspaceRoot: string
 ): Promise<void> {
     // Silent structure setup
-    await projectSetup.silentInit(workspaceRoot);
+    await projectSetup.silentInit(workspaceRoot, context);
 
     const controller = await controllerManager.getActiveControllerWithPassword(workspaceRoot);
     statusBar.update(controller?.name);
@@ -504,7 +504,7 @@ async function cmdInitProject(context: vscode.ExtensionContext): Promise<void> {
     }
 
     // Step 4: Create project files (tsconfig uses archive base if available)
-    await projectSetup.setupProjectFiles(workspaceRoot, controller, false, archiveTsConfig);
+    await projectSetup.setupProjectFiles(workspaceRoot, controller, false, archiveTsConfig, context);
 
     // Write rumo.config.json (activeController)
     controllerManager.setActiveControllerName(workspaceRoot, controllerName!);

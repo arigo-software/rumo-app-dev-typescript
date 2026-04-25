@@ -10,7 +10,7 @@
 - [ ] **Version auf 1.0.0 setzen** (oder 1.x.x)
 - [ ] **Versionshistorie im README bereinigen** — alte Pre-1.0 Einträge entfernen, History beginnt bei v1.0.0
 
-- [ ] **Plugin: KI-Anweisungen für VS Code** — beim Init Project automatisch `.github/copilot-instructions.md` ins Projektverzeichnis schreiben mit Beschreibung wie Rumo-Apps programmiert werden (AppDefinition, AppInstance, Hooks, Typen etc.) — unterstützt Copilot/Cursor/etc. beim App-Development
+- [x] **Plugin: KI-Anweisungen für VS Code** — `.github/copilot-instructions.md` wird beim Init und beim Start automatisch ins Projekt geschrieben; versioniert (COPILOT_INSTRUCTIONS_VERSION), wird bei neueren Plugin-Versionen automatisch aktualisiert
 
 ## Später / Future Release
 
