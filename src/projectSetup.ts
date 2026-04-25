@@ -12,6 +12,7 @@ import { ControllerConfigWithPassword } from './controllerManager';
 const COPILOT_INSTRUCTIONS_VERSION = '1';
 const COPILOT_INSTRUCTIONS_VERSION_MARKER = `<!-- rumo-app-dev-instructions-version: ${COPILOT_INSTRUCTIONS_VERSION} -->`;
 const RUMO_INSTRUCTIONS_FILENAME = 'rumo-app-instructions.md';
+const CURSOR_RULES_FILENAME = 'rumo-app.md'; // written to .cursor/rules/
 
 // Read the bundled rumo-app-instructions.md from the extension's resources folder
 function getBundledCopilotInstructions(context: vscode.ExtensionContext): string {
@@ -344,6 +345,39 @@ export class ProjectSetup {
         fs.writeFileSync(targetPath, bundledWithMarker, 'utf8');
         if (!silent) {
             vscode.window.showInformationMessage(`RumoAppDev: .github/${RUMO_INSTRUCTIONS_FILENAME} written.`);
+        }
+
+        // Also write to .cursor/rules/ for Cursor AI support
+        this.ensureCursorRules(workspaceRoot, bundledWithMarker, silent);
+    }
+
+    /**
+     * Writes (or updates) .cursor/rules/rumo-app.md for Cursor AI.
+     * Uses the same versioned content as the Copilot instructions.
+     */
+    private ensureCursorRules(workspaceRoot: string, contentWithMarker: string, silent = false): void {
+        const cursorRulesDir = path.join(workspaceRoot, '.cursor', 'rules');
+        const targetPath = path.join(cursorRulesDir, CURSOR_RULES_FILENAME);
+
+        // Check existing version
+        if (fs.existsSync(targetPath)) {
+            const existing = fs.readFileSync(targetPath, 'utf8');
+            const match = existing.match(/<!-- rumo-app-dev-instructions-version: (\d+) -->/);
+            if (match) {
+                const existingVersion = parseInt(match[1], 10);
+                const currentVersion = parseInt(COPILOT_INSTRUCTIONS_VERSION, 10);
+                if (existingVersion >= currentVersion) { return; }
+            } else {
+                return; // user-managed file
+            }
+        }
+
+        if (!fs.existsSync(cursorRulesDir)) {
+            fs.mkdirSync(cursorRulesDir, { recursive: true });
+        }
+        fs.writeFileSync(targetPath, contentWithMarker, 'utf8');
+        if (!silent) {
+            vscode.window.showInformationMessage(`RumoAppDev: .cursor/rules/${CURSOR_RULES_FILENAME} written.`);
         }
     }
 
