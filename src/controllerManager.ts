@@ -199,6 +199,121 @@ export class ControllerManager {
     }
 
     /**
+     * Removes a controller from global settings and deletes its password from SecretStorage.
+     */
+    public async removeController(name: string): Promise<void> {
+        const config = vscode.workspace.getConfiguration(ControllerManager.CONFIG_KEY);
+        const existing = this.getControllers();
+        const updated = existing.filter(c => c.name !== name);
+        await config.update('controllers', updated, vscode.ConfigurationTarget.Global);
+        await this.context.secrets.delete(`${ControllerManager.SECRET_PREFIX}${name}`);
+    }
+
+    /**
+     * Interactive wizard to edit an existing controller.
+     * Pre-fills all fields with current values.
+     * Returns the updated controller (including password), or undefined if cancelled.
+     */
+    public async promptEditController(existing: ControllerConfig): Promise<ControllerConfigWithPassword | undefined> {
+        const currentPassword = (await this.getPassword(existing.name)) ?? '';
+
+        const name = await vscode.window.showInputBox({
+            prompt: 'Controller name',
+            value: existing.name,
+            ignoreFocusOut: true,
+        });
+        if (!name) { return undefined; }
+
+        const host = await vscode.window.showInputBox({
+            prompt: 'Controller IP address or hostname',
+            value: existing.host,
+            ignoreFocusOut: true,
+        });
+        if (!host) { return undefined; }
+
+        const sshPortStr = await vscode.window.showInputBox({
+            prompt: 'SSH port',
+            value: String(existing.sshPort),
+            ignoreFocusOut: true,
+        });
+        if (!sshPortStr) { return undefined; }
+
+        const httpsPortStr = await vscode.window.showInputBox({
+            prompt: 'HTTPS port (for version API)',
+            value: String(existing.httpsPort),
+            ignoreFocusOut: true,
+        });
+        if (!httpsPortStr) { return undefined; }
+
+        const username = await vscode.window.showInputBox({
+            prompt: 'SSH username',
+            value: existing.username,
+            ignoreFocusOut: true,
+        });
+        if (!username) { return undefined; }
+
+        const password = await vscode.window.showInputBox({
+            prompt: 'SSH password (leave empty to keep current)',
+            password: true,
+            ignoreFocusOut: true,
+            placeHolder: currentPassword ? '(unchanged)' : '',
+        });
+        if (password === undefined) { return undefined; }
+
+        const updatedController: ControllerConfig = {
+            name,
+            host,
+            sshPort: parseInt(sshPortStr, 10) || 22,
+            httpsPort: parseInt(httpsPortStr, 10) || 443,
+            username,
+        };
+
+        // If name changed, remove old entry + old password
+        if (name !== existing.name) {
+            await this.removeController(existing.name);
+        }
+
+        await this.addController(updatedController);
+
+        const finalPassword = password || currentPassword;
+        await this.savePassword(name, finalPassword);
+
+        return { ...updatedController, password: finalPassword };
+    }
+
+    /**
+     * Interactive wizard to select and delete a controller.
+     * Returns the deleted controller name, or undefined if cancelled.
+     */
+    public async promptDeleteController(): Promise<string | undefined> {
+        const controllers = this.getControllers();
+        if (controllers.length === 0) {
+            vscode.window.showWarningMessage('No controllers configured.');
+            return undefined;
+        }
+
+        const items: vscode.QuickPickItem[] = controllers.map(c => ({
+            label: c.name,
+            description: `${c.host}:${c.sshPort}`,
+        }));
+
+        const selected = await vscode.window.showQuickPick(items, {
+            placeHolder: 'Select a controller to delete',
+        });
+        if (!selected) { return undefined; }
+
+        const confirm = await vscode.window.showWarningMessage(
+            `Delete controller "${selected.label}"? This cannot be undone.`,
+            { modal: true },
+            'Delete'
+        );
+        if (confirm !== 'Delete') { return undefined; }
+
+        await this.removeController(selected.label);
+        return selected.label;
+    }
+
+    /**
      * QuickPick to select a controller from the global settings list.
      * Returns the selected controller name, '__ADD_NEW__', or undefined if cancelled.
      */

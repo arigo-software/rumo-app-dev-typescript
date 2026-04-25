@@ -4,7 +4,8 @@
 
 VS Code Plugin für die TypeScript App-Entwicklung auf ARIGO Rumo-Steuerungen.
 
-- **Plugin-Verzeichnis:** `/home/agent/.openclaw/workspace/projects/rumo-app-dev/`
+- **Repository:** [arigo-software/rumo-app-dev-typescript](https://github.com/arigo-software/rumo-app-dev-typescript)
+- **Releases:** [GitHub Releases](https://github.com/arigo-software/rumo-app-dev-typescript/releases) (aktuelle `.vsix` zum Download)
 - **Kompiliert sauber:** Ja (`tsc` exit 0, keine Fehler/Warnings)
 
 ---

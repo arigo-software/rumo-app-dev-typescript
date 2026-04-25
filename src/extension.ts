@@ -58,6 +58,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('rumo-app-dev-typescript.setDebugMode', () =>
             cmdSetDebugMode(context)
         ),
+        vscode.commands.registerCommand('rumo-app-dev-typescript.editController', () =>
+            cmdEditController(context)
+        ),
+        vscode.commands.registerCommand('rumo-app-dev-typescript.deleteController', () =>
+            cmdDeleteController(context)
+        ),
+        vscode.commands.registerCommand('rumo-app-dev-typescript.changePassword', () =>
+            cmdChangePassword(context)
+        ),
     );
 
     // Watch for new app files and insert boilerplate
@@ -325,6 +334,107 @@ async function cmdAddController(context: vscode.ExtensionContext): Promise<void>
 /**
  * Initialize Project Wizard — creates all project files, picks a controller.
  */
+async function cmdEditController(context: vscode.ExtensionContext): Promise<void> {
+    const workspaceRoot = getWorkspaceRoot();
+
+    const controllers = controllerManager.getControllers();
+    if (controllers.length === 0) {
+        vscode.window.showWarningMessage('RumoAppDev: No controllers configured.');
+        return;
+    }
+
+    const items: vscode.QuickPickItem[] = controllers.map(c => ({
+        label: c.name,
+        description: `${c.host}:${c.sshPort}`,
+    }));
+
+    const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: 'Select a controller to edit',
+    });
+    if (!selected) { return; }
+
+    const existing = controllers.find(c => c.name === selected.label);
+    if (!existing) { return; }
+
+    const updated = await controllerManager.promptEditController(existing);
+    if (!updated) { return; }
+
+    vscode.window.showInformationMessage(`RumoAppDev: Controller "${updated.name}" updated.`);
+
+    // If this is a Rumo project and the edited controller is the active one, reconnect
+    if (workspaceRoot && controllerManager.isRumoProject(workspaceRoot)) {
+        const activeName = controllerManager.getActiveControllerName(workspaceRoot);
+        if (activeName === updated.name || activeName === existing.name) {
+            await performControllerSwitch(context, workspaceRoot, updated.name);
+        }
+    }
+}
+
+async function cmdDeleteController(context: vscode.ExtensionContext): Promise<void> {
+    const workspaceRoot = getWorkspaceRoot();
+
+    const deletedName = await controllerManager.promptDeleteController();
+    if (!deletedName) { return; }
+
+    vscode.window.showInformationMessage(`RumoAppDev: Controller "${deletedName}" deleted.`);
+
+    // If the deleted controller was the active one, update status bar
+    if (workspaceRoot && controllerManager.isRumoProject(workspaceRoot)) {
+        const activeName = controllerManager.getActiveControllerName(workspaceRoot);
+        if (activeName === deletedName) {
+            statusBar.update(undefined);
+            // Optionally prompt to switch to another controller
+            const remaining = controllerManager.getControllers();
+            if (remaining.length > 0) {
+                const switchNow = await vscode.window.showWarningMessage(
+                    `Active controller "${deletedName}" was deleted. Switch to another?`,
+                    'Switch', 'Later'
+                );
+                if (switchNow === 'Switch') {
+                    await cmdSwitchController(context);
+                }
+            }
+        }
+    }
+}
+
+async function cmdChangePassword(context: vscode.ExtensionContext): Promise<void> {
+    const controllers = controllerManager.getControllers();
+    if (controllers.length === 0) {
+        vscode.window.showWarningMessage('RumoAppDev: No controllers configured.');
+        return;
+    }
+
+    const items: vscode.QuickPickItem[] = controllers.map(c => ({
+        label: c.name,
+        description: `${c.host}:${c.sshPort}`,
+    }));
+
+    const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: 'Select a controller to change password',
+    });
+    if (!selected) { return; }
+
+    const newPassword = await vscode.window.showInputBox({
+        prompt: `New password for "${selected.label}"`,
+        password: true,
+        ignoreFocusOut: true,
+    });
+    if (newPassword === undefined) { return; }
+
+    await controllerManager.savePassword(selected.label, newPassword);
+    vscode.window.showInformationMessage(`RumoAppDev: Password for "${selected.label}" updated.`);
+
+    // Reconnect SFTP with new password if this is the active controller
+    const workspaceRoot = getWorkspaceRoot();
+    if (workspaceRoot && controllerManager.isRumoProject(workspaceRoot)) {
+        const activeName = controllerManager.getActiveControllerName(workspaceRoot);
+        if (activeName === selected.label) {
+            await performControllerSwitch(context, workspaceRoot, selected.label);
+        }
+    }
+}
+
 async function cmdInitProject(context: vscode.ExtensionContext): Promise<void> {
     const workspaceRoot = getWorkspaceRoot();
     if (!workspaceRoot) { return; }

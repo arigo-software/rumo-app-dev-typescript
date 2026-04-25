@@ -32,9 +32,24 @@ A comprehensive VS Code extension for developing, debugging, and deploying ARIGO
 
 ## Installation
 
-1. **Download** the `.vsix` file from ARIGO (contact your ARIGO support contact)
+### Option 1: Install from GitHub Releases (Recommended)
+
+1. **Download** the latest `.vsix` file from [GitHub Releases](https://github.com/arigo-software/rumo-app-dev-typescript/releases)
 2. **Install** in VS Code: Extensions (`Ctrl+Shift+X`) → `...` menu → **Install from VSIX...** → select the file
 3. **Restart** VS Code
+
+Or from terminal:
+```bash
+wget https://github.com/arigo-software/rumo-app-dev-typescript/releases/download/latest/rumo-app-dev-typescript.vsix
+code --install-extension rumo-app-dev-typescript.vsix
+```
+
+### Option 2: Install from Open VSX (code-server / VSCodium)
+
+```bash
+wget "https://open-vsx.org/api/arigo-software/rumo-app-dev-typescript/latest/file/arigo-software.rumo-app-dev-typescript.latest.vsix"
+code-server --install-extension rumo-app-dev-typescript.latest.vsix
+```
 
 ## Getting Started
 
@@ -249,23 +264,15 @@ For detailed API documentation and app development guide, refer to the ARIGO Pro
 
 ## Version History
 
-- **v0.14.0** (2026-04-16): sftp.json now written via VS Code API so SFTP plugin auto-reloads (fixes SFTP Explorer requiring manual re-save)
+See [GitHub Releases](https://github.com/arigo-software/rumo-app-dev-typescript/releases) for full version history and changelog.
 
-- **v0.13.0** (2026-04-16): Reload Window prompt after Init so SFTP Explorer picks up the new `type/` folder correctly
-
-- **v0.12.0** (2026-04-16): `type/` folder now created automatically on project init (fixes SFTP Explorer not showing on fresh projects)
-
-- **v0.11.0** (2026-04-16): TypeScript Edition
-  - Full TypeScript support with source maps and watch mode
-  - Corrected file structure documentation (`src/type/app/` format)
-  - Enhanced debug warnings about controller halt state
-  - enableDebug/disableDebug package support
-  - Multi-controller management
-  - Chrome DevTools debugging
-  - Automatic SFTP deployment
-  - Type definition auto-download
-
-- **v0.10.0** (2026-04-15): Initial Production Release
+**Latest Release Features:**
+- Full TypeScript support with source maps and watch mode
+- Multi-controller management with SecretStorage
+- Chrome DevTools debugging integration
+- Automatic SFTP deployment
+- Type definition auto-download
+- GitHub Releases distribution
 
 ## License
 
@@ -275,5 +282,5 @@ This extension includes open source components. See `THIRD_PARTY_NOTICES.md` (in
 
 ---
 
-**Last Updated**: April 21, 2026  
-**Plugin Version**: 0.31.0 (TypeScript Edition)
+**Latest Release**: [GitHub Releases](https://github.com/arigo-software/rumo-app-dev-typescript/releases)  
+**Repository**: [arigo-software/rumo-app-dev-typescript](https://github.com/arigo-software/rumo-app-dev-typescript)
