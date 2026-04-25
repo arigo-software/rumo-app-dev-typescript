@@ -5,13 +5,15 @@ import { TextEncoder } from 'util';
 import { execSync } from 'child_process';
 import { ControllerConfigWithPassword } from './controllerManager';
 
-// ── Versioned copilot-instructions ───────────────────────────────────────────
+// ── Versioned rumo-app-instructions ────────────────────────────────────────
 // Bump COPILOT_INSTRUCTIONS_VERSION whenever the content changes.
 // The plugin will update the file in user projects if the version is outdated.
+// File: .github/rumo-app-instructions.md (separate from user's copilot-instructions.md)
 const COPILOT_INSTRUCTIONS_VERSION = '1';
-const COPILOT_INSTRUCTIONS_VERSION_MARKER = `<!-- rumo-app-dev-version: ${COPILOT_INSTRUCTIONS_VERSION} -->`;
+const COPILOT_INSTRUCTIONS_VERSION_MARKER = `<!-- rumo-app-dev-instructions-version: ${COPILOT_INSTRUCTIONS_VERSION} -->`;
+const RUMO_INSTRUCTIONS_FILENAME = 'rumo-app-instructions.md';
 
-// Read the bundled copilot-instructions.md from the extension's resources folder
+// Read the bundled rumo-app-instructions.md from the extension's resources folder
 function getBundledCopilotInstructions(context: vscode.ExtensionContext): string {
     const resourcePath = path.join(context.extensionPath, 'resources', 'copilot-instructions.md');
     if (fs.existsSync(resourcePath)) {
@@ -295,16 +297,17 @@ export class ProjectSetup {
         }
     }
 
-    // ── .github/copilot-instructions.md ──────────────────────────────────
+    // ── .github/rumo-app-instructions.md ────────────────────────────────
 
     /**
-     * Writes (or updates) .github/copilot-instructions.md in the user's project.
-     * If the file already exists and contains a version marker, it is only
-     * overwritten when the bundled version is newer.
+     * Writes (or updates) .github/rumo-app-instructions.md in the user's project.
+     * Uses a separate file so it doesn't conflict with the user's own copilot-instructions.md.
+     * Copilot reads all .md files in .github/ automatically.
+     * Only overwrites if the version marker indicates an outdated version.
      */
     public ensureCopilotInstructions(workspaceRoot: string, context: vscode.ExtensionContext, silent = false): void {
         const githubDir = path.join(workspaceRoot, '.github');
-        const targetPath = path.join(githubDir, 'copilot-instructions.md');
+        const targetPath = path.join(githubDir, RUMO_INSTRUCTIONS_FILENAME);
 
         const bundledContent = getBundledCopilotInstructions(context);
         if (!bundledContent) { return; } // no bundled file — skip
@@ -314,7 +317,7 @@ export class ProjectSetup {
         // Check existing version
         if (fs.existsSync(targetPath)) {
             const existing = fs.readFileSync(targetPath, 'utf8');
-            const match = existing.match(/<!-- rumo-app-dev-version: (\d+) -->/);
+            const match = existing.match(/<!-- rumo-app-dev-instructions-version: (\d+) -->/);
             if (match) {
                 const existingVersion = parseInt(match[1], 10);
                 const currentVersion = parseInt(COPILOT_INSTRUCTIONS_VERSION, 10);
@@ -324,7 +327,7 @@ export class ProjectSetup {
                 // Outdated — update
                 if (!silent) {
                     vscode.window.showInformationMessage(
-                        `RumoAppDev: Updating .github/copilot-instructions.md (v${existingVersion} → v${currentVersion})`
+                        `RumoAppDev: Updating .github/${RUMO_INSTRUCTIONS_FILENAME} (v${existingVersion} → v${currentVersion})`
                     );
                 }
             }
@@ -340,7 +343,7 @@ export class ProjectSetup {
         }
         fs.writeFileSync(targetPath, bundledWithMarker, 'utf8');
         if (!silent) {
-            vscode.window.showInformationMessage('RumoAppDev: .github/copilot-instructions.md written.');
+            vscode.window.showInformationMessage(`RumoAppDev: .github/${RUMO_INSTRUCTIONS_FILENAME} written.`);
         }
     }
 
