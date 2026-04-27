@@ -3,7 +3,6 @@
 ## Offen
 
 - [ ] **Doku: App in Projekteditor einfügen** — beschreiben wie eine neue App in den Projekteditor eingefügt wird
-- [ ] **Sammeln läuft noch** — Simon sammelt weitere Punkte zu arigo-app-development.md
 
 ## Wenn alle Todos erledigt: Release 1.0
 
