@@ -118,14 +118,91 @@ export class TypeDownloader {
 
             return archiveTsConfig;
         } catch (err) {
-            vscode.window.showErrorMessage(
-                `RumoAppDev: Failed to download type definitions: ${(err as Error).message}`
-            );
-            throw err;
+            // Silently log connectivity/SFTP errors — do not disturb the user
+            console.error(`RumoAppDev: Failed to download type definitions: ${(err as Error).message}`);
+            return undefined;
         } finally {
             try { await sftp.end(); } catch { /* ignore */ }
             try { if (fs.existsSync(tmpFile)) { fs.unlinkSync(tmpFile); } } catch { /* ignore */ }
             try { if (fs.existsSync(tmpExtractDir)) { fs.rmSync(tmpExtractDir, { recursive: true, force: true }); } } catch { /* ignore */ }
+        }
+    }
+
+    /**
+     * Extracts the bundled default type definitions archive (resources/data.tar.xz)
+     * into `src/` in the workspace, but only if `src/lib/` does not yet exist.
+     *
+     * @param context       VS Code extension context (provides extensionPath)
+     * @param workspaceRoot Absolute path to the workspace root
+     * @returns             Parsed tsconfig compilerOptions from the archive, or undefined
+     */
+    public async extractDefaultTypeDefs(
+        context: vscode.ExtensionContext,
+        workspaceRoot: string
+    ): Promise<Record<string, unknown> | undefined> {
+        // Only extract if types are not yet present
+        const libDir = path.join(workspaceRoot, LOCAL_DTS_DIR, 'lib');
+        if (fs.existsSync(libDir)) {
+            console.log('RumoAppDev: src/lib/ already exists — skipping default type extraction.');
+            return undefined;
+        }
+
+        const archivePath = path.join(context.extensionPath, 'resources', 'data.tar.xz');
+        if (!fs.existsSync(archivePath)) {
+            console.log('RumoAppDev: Default type archive not found, skipping.');
+            return undefined;
+        }
+
+        const localSrcDir = path.join(workspaceRoot, LOCAL_DTS_DIR);
+        if (!fs.existsSync(localSrcDir)) {
+            fs.mkdirSync(localSrcDir, { recursive: true });
+        }
+
+        const tmpExtractDir = path.join(os.tmpdir(), `rumo-dts-default-${Date.now()}`);
+        fs.mkdirSync(tmpExtractDir, { recursive: true });
+
+        try {
+            // Extract archive into temp dir
+            await new Promise<void>((resolve, reject) => {
+                const input = fs.createReadStream(archivePath);
+                const decompressor = lzma.createDecompressor();
+                const extract = tar.x({ cwd: tmpExtractDir });
+                extract.on('finish', resolve);
+                extract.on('error', reject);
+                decompressor.on('error', reject);
+                input.pipe(decompressor).pipe(extract as unknown as NodeJS.WritableStream);
+            });
+
+            // Read tsconfig.json from archive root
+            let archiveTsConfig: Record<string, unknown> | undefined;
+            const archiveTsConfigPath = path.join(tmpExtractDir, 'tsconfig.json');
+            if (fs.existsSync(archiveTsConfigPath)) {
+                try {
+                    archiveTsConfig = JSON.parse(fs.readFileSync(archiveTsConfigPath, 'utf8'));
+                } catch {
+                    console.warn('RumoAppDev: Could not parse tsconfig.json from default archive');
+                }
+            }
+
+            // Copy types/ content into src/
+            const extractedTypesDir = path.join(tmpExtractDir, 'types');
+            if (fs.existsSync(extractedTypesDir)) {
+                this.copyDirRecursive(extractedTypesDir, localSrcDir);
+                console.log('RumoAppDev: Default type definitions extracted into src/');
+            } else {
+                console.warn('RumoAppDev: No types/ folder found in default archive');
+            }
+
+            return archiveTsConfig;
+        } catch (err) {
+            console.error(`RumoAppDev: Failed to extract default type defs: ${(err as Error).message}`);
+            return undefined;
+        } finally {
+            try {
+                if (fs.existsSync(tmpExtractDir)) {
+                    fs.rmSync(tmpExtractDir, { recursive: true, force: true });
+                }
+            } catch { /* ignore */ }
         }
     }
 

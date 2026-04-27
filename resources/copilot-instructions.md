@@ -179,6 +179,27 @@ src/type/app/[type]/[name]/local.ts     # also runs on remote device FBs
 build/type/.../_default.js              # compiled output (auto-deployed)
 ```
 
+## Helper Classes / Shared Code
+
+**IMPORTANT: Never create helper files in `src/lib/`.** The `lib/` folder contains read-only type definitions downloaded from the controller. It is not writable and must not be modified.
+
+Place all custom helper classes and shared code inside the type folder, alongside the app:
+
+```
+src/type/app/[type]/[name]/_default.ts       # main app
+src/type/app/[type]/[name]/myHelper.ts       # custom helper — same folder
+src/type/app/[type]/[name]/utils/helpers.ts  # or in a subfolder
+```
+
+Import helpers with a relative path:
+
+```typescript
+import { MyHelper } from './myHelper';
+import { helperFn } from './utils/helpers';
+```
+
+Do NOT use `lib/` for custom code. Only use `lib/` for importing built-in Rumo types (`appDef`, `appUtil`, `out`, `rumoUrl`, `subscriptionManager`, etc.).
+
 ## tsconfig
 
 - `baseUrl: "src"` → `import x from "lib/foo"` resolves to `src/lib/foo.d.ts`

@@ -13,3 +13,6 @@ node_modules_prod/**
 esbuild.js
 build-vsix.sh
 rumo-app-dev-*.vsix
+
+# Explicitly include bundled default type archive
+!resources/data.tar.xz

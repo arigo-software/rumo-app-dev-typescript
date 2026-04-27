@@ -120,6 +120,9 @@ export class SftpSync {
      * Uploads a single local file (from build/type/) to the remote /type/ directory.
      */
     public async uploadFile(localPath: string, workspaceRoot: string): Promise<void> {
+        // Silently skip when offline or no controller configured
+        if (!this.controller || !this.controller.host) { return; }
+
         if (!await this.ensureConnected()) {
             vscode.window.showWarningMessage('RumoAppDev: Not connected to SFTP — cannot upload file.');
             return;
@@ -152,6 +155,9 @@ export class SftpSync {
      * Uploads all .js and .js.map files from build/type/ to the remote /type/ directory.
      */
     public async uploadAllFiles(workspaceRoot: string): Promise<void> {
+        // Silently skip when offline or no controller configured
+        if (!this.controller || !this.controller.host) { return; }
+
         if (!await this.ensureConnected()) {
             vscode.window.showWarningMessage('RumoAppDev: Not connected to SFTP — cannot upload files.');
             return;

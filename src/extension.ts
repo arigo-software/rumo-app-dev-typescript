@@ -128,6 +128,13 @@ async function activateForProject(
 
     if (!controller) { return; }
 
+    // Handle offline controller
+    if (controllerManager.isOfflineController(controller.name)) {
+        await sftpSync.setController(undefined);
+        await maybeDownloadTypeDefs(context, controller);
+        return;
+    }
+
     // Connect SFTP
     try {
         await sftpSync.setController(controller);
@@ -158,16 +165,28 @@ async function onControllerConfigChanged(context: vscode.ExtensionContext): Prom
     const controller = await controllerManager.getActiveControllerWithPassword(workspaceRoot);
     statusBar.update(controller?.name);
 
-    // Reconnect SFTP
-    try {
-        await sftpSync.setController(controller);
-    } catch {
-        // non-fatal
-    }
-
     if (!controller) { return; }
 
-    await maybeDownloadTypeDefs(context, controller);
+    // Handle offline controller
+    if (controllerManager.isOfflineController(controller.name)) {
+        await sftpSync.setController(undefined);
+        return;
+    }
+
+    // Reconnect SFTP with updated config
+    try {
+        await sftpSync.setController(controller);
+        if (sftpSync.isConnected()) {
+            statusBar.setConnected(controller.name);
+        } else {
+            statusBar.setDisconnected(controller.name);
+        }
+    } catch {
+        statusBar.setDisconnected(controller.name);
+    }
+
+    // Regenerate sftp.json so SFTP plugin also uses the updated config
+    await projectSetup.generateSftpJson(workspaceRoot, controller);
 
     const version = await typeDownloader.fetchControllerVersion(controller);
     await debugConfig.updateLaunchJson(controller, workspaceRoot, version);
@@ -340,7 +359,10 @@ async function cmdAddController(context: vscode.ExtensionContext): Promise<void>
 async function cmdEditController(context: vscode.ExtensionContext): Promise<void> {
     const workspaceRoot = getWorkspaceRoot();
 
-    const controllers = controllerManager.getControllers();
+    // Exclude the built-in Offline pseudo-controller from edit list
+    const controllers = controllerManager.getControllers().filter(
+        c => !controllerManager.isOfflineController(c.name)
+    );
     if (controllers.length === 0) {
         vscode.window.showWarningMessage('RumoAppDev: No controllers configured.');
         return;
@@ -451,66 +473,75 @@ async function cmdInitProject(context: vscode.ExtensionContext): Promise<void> {
         if (confirm !== 'Yes, Re-initialize') { return; }
     }
 
-    // Step 2: Select or create a controller
+    // Step 2: Create directories FIRST (before any network operations)
+    projectSetup.ensureDirectories(workspaceRoot);
+
+    // Step 3: Select or create a controller
     let controllerName: string | undefined;
-    const existingControllers = controllerManager.getControllers();
+    const choice = await controllerManager.promptSwitchController();
+    if (!choice) { return; }
 
-    if (existingControllers.length > 0) {
-        const choice = await controllerManager.promptSwitchController();
-        if (!choice) { return; }
-
-        if (choice === '__ADD_NEW__') {
-            const newCtrl = await controllerManager.promptAddController();
-            if (!newCtrl) { return; }
-            controllerName = newCtrl.name;
-        } else {
-            controllerName = choice;
-        }
-    } else {
-        // No controllers configured at all — add one now
-        vscode.window.showInformationMessage(
-            'RumoAppDev: No controllers configured. Please add a controller first.'
-        );
+    if (choice === '__ADD_NEW__') {
         const newCtrl = await controllerManager.promptAddController();
         if (!newCtrl) { return; }
         controllerName = newCtrl.name;
+    } else {
+        controllerName = choice;
     }
 
-    // Retrieve full controller config with password
-    const controller = await controllerManager.getActiveControllerWithPassword(
-        workspaceRoot
-    ).then(async (c) => {
-        // If different controller was just set, build manually
-        if (c?.name === controllerName) { return c; }
-        const base = controllerManager.getControllers().find(x => x.name === controllerName);
-        if (!base) { return undefined; }
-        const password = (await controllerManager.getPassword(base.name)) ?? '';
-        return { ...base, password };
-    });
+    // Step 4: Write rumo.config.json (activeController)
+    controllerManager.setActiveControllerName(workspaceRoot, controllerName!);
 
-    if (!controller) {
-        vscode.window.showErrorMessage('RumoAppDev: Could not resolve controller configuration.');
+    // Step 5: Handle offline controller
+    if (controllerManager.isOfflineController(controllerName!)) {
+        const archiveTsConfig = await typeDownloader.extractDefaultTypeDefs(context, workspaceRoot);
+
+        // Set up project files (no sftp.json for offline mode)
+        await projectSetup.ensurePackageJson(workspaceRoot, false);
+        projectSetup.ensureTsConfig(workspaceRoot, false, archiveTsConfig);
+        projectSetup.ensureGitIgnore(workspaceRoot, false);
+        projectSetup.ensureExtensionsJson(workspaceRoot, false);
+        projectSetup.ensureCopilotInstructions(workspaceRoot, context, false);
+
+        await sftpSync.setController(undefined);
+        statusBar.update(controllerName!);
+
+        vscode.window.showInformationMessage(
+            'RumoAppDev: Project initialized in offline mode — using local type definitions.'
+        );
         return;
     }
 
-    // Step 3: Download d.ts + get archive tsconfig
+    // Retrieve full controller config with password
+    const base = controllerManager.getControllers().find(x => x.name === controllerName);
+    if (!base) {
+        vscode.window.showErrorMessage('RumoAppDev: Could not resolve controller configuration.');
+        return;
+    }
+    const password = (await controllerManager.getPassword(base.name)) ?? '';
+    const controller = { ...base, password };
+
+    // Step 6: Try to download d.ts from controller (silently falls back on failure)
     let archiveTsConfig: Record<string, unknown> | undefined;
     const version = await typeDownloader.fetchControllerVersion(controller);
-    try {
-        archiveTsConfig = await typeDownloader.downloadTypeDefs(controller, workspaceRoot);
+    archiveTsConfig = await typeDownloader.downloadTypeDefs(controller, workspaceRoot);
+
+    if (archiveTsConfig) {
+        // Download succeeded — cache version
         if (version) {
             const cacheKey = `${VERSION_CACHE_KEY}.${controller.name}`;
             await context.workspaceState.update(cacheKey, version);
         }
-    } catch {
-        // Error already shown, continue with fallback tsconfig
+    } else {
+        // Controller unreachable — use bundled fallback if no types present yet
+        const libDir = path.join(workspaceRoot, 'src', 'lib');
+        if (!fs.existsSync(libDir)) {
+            archiveTsConfig = await typeDownloader.extractDefaultTypeDefs(context, workspaceRoot);
+        }
     }
 
-    // Step 4: Create project files (tsconfig uses archive base if available)
+    // Step 7: Create remaining project files
     await projectSetup.setupProjectFiles(workspaceRoot, controller, false, archiveTsConfig, context);
-
-    // Write rumo.config.json (activeController)
-    controllerManager.setActiveControllerName(workspaceRoot, controllerName!);
 
     // Write launch.json
     await debugConfig.updateLaunchJson(controller, workspaceRoot, version);
@@ -524,7 +555,6 @@ async function cmdInitProject(context: vscode.ExtensionContext): Promise<void> {
 
     statusBar.update(controller.name);
 
-    // Step 5: Success
     vscode.window.showInformationMessage(
         `RumoAppDev: Project initialized for controller "${controller.name}".`
     );
@@ -535,11 +565,10 @@ async function cmdInitProject(context: vscode.ExtensionContext): Promise<void> {
 /**
  * Performs a full controller switch:
  * 1. Updates rumo.config.json
- * 2. Regenerates .vscode/sftp.json
- * 3. Updates .vscode/launch.json
- * 4. Re-downloads d.ts
- * 5. Updates status bar
- * 6. Reconnects SFTP
+ * 2. Handles offline mode or real controller flow
+ * 3. Re-downloads/extracts d.ts as appropriate
+ * 4. Updates status bar
+ * 5. Reconnects or disconnects SFTP
  */
 async function performControllerSwitch(
     context: vscode.ExtensionContext,
@@ -549,6 +578,23 @@ async function performControllerSwitch(
     // 1. Update rumo.config.json
     controllerManager.setActiveControllerName(workspaceRoot, controllerName);
 
+    // 2. Handle offline controller
+    if (controllerManager.isOfflineController(controllerName)) {
+        await sftpSync.setController(undefined);
+
+        // Extract default type defs only if src/lib/ doesn’t exist yet
+        const libDir = path.join(workspaceRoot, 'src', 'lib');
+        if (!fs.existsSync(libDir)) {
+            await typeDownloader.extractDefaultTypeDefs(context, workspaceRoot);
+        }
+
+        statusBar.update(controllerName);
+        vscode.window.showInformationMessage(
+            'RumoAppDev: Offline mode — using local type definitions.'
+        );
+        return;
+    }
+
     // Get full controller with password
     const controller = await controllerManager.getActiveControllerWithPassword(workspaceRoot);
     if (!controller) {
@@ -556,31 +602,28 @@ async function performControllerSwitch(
         return;
     }
 
-    // 2. Regenerate .vscode/sftp.json
+    // 3. Regenerate .vscode/sftp.json
     await projectSetup.generateSftpJson(workspaceRoot, controller);
 
-    // 3. Update .vscode/launch.json
+    // 4. Update .vscode/launch.json
     const version = await typeDownloader.fetchControllerVersion(controller);
     await debugConfig.updateLaunchJson(controller, workspaceRoot, version);
 
-    // 4. Re-download d.ts + update tsconfig
-    try {
-        const archiveTsConfig = await typeDownloader.downloadTypeDefs(controller, workspaceRoot);
-        if (archiveTsConfig) {
-            projectSetup.ensureTsConfig(workspaceRoot, true, archiveTsConfig);
-        }
+    // 5. Re-download d.ts + update tsconfig (returns undefined silently on failure)
+    const archiveTsConfig = await typeDownloader.downloadTypeDefs(controller, workspaceRoot);
+    if (archiveTsConfig) {
+        projectSetup.ensureTsConfig(workspaceRoot, true, archiveTsConfig);
         if (version) {
             const cacheKey = `${VERSION_CACHE_KEY}.${controller.name}`;
             await context.workspaceState.update(cacheKey, version);
         }
-    } catch {
-        // Error already shown
     }
+    // If undefined (unreachable), keep existing src/ files silently
 
-    // 5. Update status bar
+    // 6. Update status bar
     statusBar.update(controller.name);
 
-    // 6. Reconnect SFTP
+    // 7. Reconnect SFTP
     try {
         await sftpSync.setController(controller);
     } catch {
@@ -601,6 +644,15 @@ async function maybeDownloadTypeDefs(
     const workspaceRoot = getWorkspaceRoot();
     if (!workspaceRoot) { return; }
 
+    // Handle offline controller
+    if (controllerManager.isOfflineController(controller.name)) {
+        const libDir = path.join(workspaceRoot, 'src', 'lib');
+        if (!fs.existsSync(libDir)) {
+            await typeDownloader.extractDefaultTypeDefs(context, workspaceRoot);
+        }
+        return;
+    }
+
     const version = await typeDownloader.fetchControllerVersion(controller);
     const cacheKey = `${VERSION_CACHE_KEY}.${controller.name}`;
     const cachedVersion = context.workspaceState.get<string>(cacheKey);
@@ -610,14 +662,11 @@ async function maybeDownloadTypeDefs(
         return;
     }
 
-    try {
-        await typeDownloader.downloadTypeDefs(controller, workspaceRoot);
-        if (version) {
-            await context.workspaceState.update(cacheKey, version);
-        }
-    } catch {
-        // Error already shown by typeDownloader
+    const archiveTsConfig = await typeDownloader.downloadTypeDefs(controller, workspaceRoot);
+    if (archiveTsConfig && version) {
+        await context.workspaceState.update(cacheKey, version);
     }
+    // If undefined (failure), keep existing files silently
 }
 
 // ── Connection Monitor ──────────────────────────────────────────────────────

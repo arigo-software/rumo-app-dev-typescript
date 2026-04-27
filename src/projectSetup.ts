@@ -9,9 +9,9 @@ import { ControllerConfigWithPassword } from './controllerManager';
 // Bump COPILOT_INSTRUCTIONS_VERSION whenever the content changes.
 // The plugin will update the file in user projects if the version is outdated.
 // File: .github/rumo-app-instructions.md (separate from user's copilot-instructions.md)
-const COPILOT_INSTRUCTIONS_VERSION = '1';
+const COPILOT_INSTRUCTIONS_VERSION = '2';
 const COPILOT_INSTRUCTIONS_VERSION_MARKER = `<!-- rumo-app-dev-instructions-version: ${COPILOT_INSTRUCTIONS_VERSION} -->`;
-const RUMO_INSTRUCTIONS_FILENAME = 'rumo-app-instructions.md';
+const RUMO_INSTRUCTIONS_FILENAME = 'copilot-instructions.md';
 const CURSOR_RULES_FILENAME = 'rumo-app.md'; // written to .cursor/rules/
 
 // Read the bundled rumo-app-instructions.md from the extension's resources folder
@@ -34,14 +34,16 @@ const TSCONFIG_CONTENT = JSON.stringify({
         allowJs: false,
         sourceMap: true,
         baseUrl: 'src',
-        ignoreDeprecations: '6.0',
         rootDir: 'src',
         outDir: 'build',
         esModuleInterop: true,
         importHelpers: true,
         forceConsistentCasingInFileNames: false,
+        noImplicitThis: true,
+        strictFunctionTypes: true,
+        strictNullChecks: false,
+        noPropertyAccessFromIndexSignature: false,
         allowUnreachableCode: false,
-        noEmitOnError: false,
         // typeRoots: both src/node_modules/@types (downloaded from controller)
         // and node_modules/@types (local devDependencies) are checked.
         // This makes @types/node and other ambient types available without imports.
@@ -162,6 +164,7 @@ export class ProjectSetup {
                     rootDir: 'src',
                     outDir: 'build',
                     sourceMap: true,
+                    typeRoots: ['src/node_modules/@types', 'node_modules/@types'],
                 },
                 include: ['src'],
                 exclude: ['build', 'web', 'static', 'node_modules'],
@@ -170,6 +173,11 @@ export class ProjectSetup {
             // Fallback: built-in default
             tsconfig = JSON.parse(TSCONFIG_CONTENT);
         }
+
+        // Clean up inherited options we don't want
+        const co = tsconfig['compilerOptions'] as Record<string, unknown>;
+        delete co['ignoreDeprecations'];
+        delete co['noEmitOnError'];
 
         fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2), 'utf8');
         if (!silent) {

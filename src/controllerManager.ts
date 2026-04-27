@@ -47,20 +47,40 @@ export class ControllerManager {
 
     // ── Global Controllers (User Settings) ────────────────────────────────────
 
+    /** Built-in offline pseudo-controller. */
+    private static readonly OFFLINE_CONTROLLER: ControllerConfig = {
+        name: 'Offline',
+        host: '',
+        sshPort: 22,
+        httpsPort: 443,
+        username: '',
+    };
+
+    /**
+     * Returns true if the given controller name refers to the built-in Offline pseudo-controller.
+     */
+    public isOfflineController(name: string): boolean {
+        return name === 'Offline';
+    }
+
     /**
      * Returns all controllers from global (user) VS Code settings.
+     * Always appends the built-in Offline pseudo-controller at the end.
      * Passwords are NOT included here; retrieve them via getPassword().
      */
     public getControllers(): ControllerConfig[] {
         const config = vscode.workspace.getConfiguration(ControllerManager.CONFIG_KEY);
         const raw = config.get<any[]>('controllers') ?? [];
-        return raw.map(c => ({
+        const controllers = raw.map(c => ({
             name: String(c.name ?? ''),
             host: String(c.host ?? ''),
             sshPort: Number(c.sshPort) || 22,
             httpsPort: Number(c.httpsPort) || 443,
             username: String(c.username ?? ''),
         }));
+        // Always append the built-in Offline pseudo-controller
+        controllers.push({ ...ControllerManager.OFFLINE_CONTROLLER });
+        return controllers;
     }
 
     /**
@@ -283,10 +303,12 @@ export class ControllerManager {
 
     /**
      * Interactive wizard to select and delete a controller.
+     * The built-in Offline pseudo-controller is excluded from this list.
      * Returns the deleted controller name, or undefined if cancelled.
      */
     public async promptDeleteController(): Promise<string | undefined> {
-        const controllers = this.getControllers();
+        // Exclude the built-in Offline pseudo-controller from delete list
+        const controllers = this.getControllers().filter(c => !this.isOfflineController(c.name));
         if (controllers.length === 0) {
             vscode.window.showWarningMessage('No controllers configured.');
             return undefined;
@@ -332,7 +354,7 @@ export class ControllerManager {
 
         const items: vscode.QuickPickItem[] = controllers.map(c => ({
             label: c.name,
-            description: `${c.host}:${c.sshPort}`,
+            description: c.host ? `${c.host}:${c.sshPort}` : '',
         }));
 
         items.push({ label: '$(add) Add new controller...', description: '' });
