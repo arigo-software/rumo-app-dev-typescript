@@ -90,6 +90,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Perform initial activation
     await initialActivation(context);
 
+    // Check for newer version on GitHub Releases (non-blocking)
+    checkForUpdate(context);
+
     console.log('RumoAppDev: Extension activated.');
 }
 
@@ -665,6 +668,61 @@ function getWorkspaceRoot(): string | undefined {
 
 export function getTsconfigPath(workspaceRoot: string): string {
     return path.join(workspaceRoot, 'tsconfig.json');
+}
+
+// ── Update Check ─────────────────────────────────────────────────────────────
+
+async function checkForUpdate(context: vscode.ExtensionContext): Promise<void> {
+    try {
+        const currentVersion = context.extension.packageJSON.version as string;
+        const GITHUB_REPO = 'arigo-software/rumo-app-dev-typescript';
+        const RELEASES_URL = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+        const DOWNLOAD_URL = `https://github.com/${GITHUB_REPO}/releases/latest`;
+        const LAST_CHECK_KEY = 'rumoAppDevTypescript.lastUpdateCheck';
+
+        // Only check once per day
+        const lastCheck = context.globalState.get<number>(LAST_CHECK_KEY, 0);
+        const oneDayMs = 24 * 60 * 60 * 1000;
+        if (Date.now() - lastCheck < oneDayMs) { return; }
+        await context.globalState.update(LAST_CHECK_KEY, Date.now());
+
+        const https = await import('https');
+        const latestVersion = await new Promise<string>((resolve, reject) => {
+            const req = https.get(
+                RELEASES_URL,
+                { headers: { 'User-Agent': 'rumo-app-dev-typescript-vscode' } },
+                (res) => {
+                    let data = '';
+                    res.on('data', (chunk: Buffer) => data += chunk.toString());
+                    res.on('end', () => {
+                        try {
+                            const json = JSON.parse(data);
+                            resolve((json.tag_name as string || '').replace(/^v/, ''));
+                        } catch { reject(new Error('Parse error')); }
+                    });
+                }
+            );
+            req.on('error', reject);
+            req.setTimeout(5000, () => { req.destroy(); reject(new Error('Timeout')); });
+        });
+
+        if (!latestVersion) { return; }
+
+        // Simple semver comparison (major.minor.patch)
+        const toNum = (v: string) => v.split('.').map(Number).reduce((a, b) => a * 1000 + b, 0);
+        if (toNum(latestVersion) > toNum(currentVersion)) {
+            const action = await vscode.window.showInformationMessage(
+                `RumoAppDev: Update available — v${latestVersion} (current: v${currentVersion})`,
+                'Download',
+                'Dismiss'
+            );
+            if (action === 'Download') {
+                vscode.env.openExternal(vscode.Uri.parse(DOWNLOAD_URL));
+            }
+        }
+    } catch {
+        // Silently ignore — network unavailable or API error
+    }
 }
 
 // ── App File Watcher (boilerplate insertion) ─────────────────────────────────
