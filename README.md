@@ -69,33 +69,43 @@ code-server --install-extension rumo-app-dev-typescript.latest.vsix
 If you need to work with multiple controllers or update existing ones:
 
 #### Add a Controller
-1. Command Palette → **"RumoAppDev: Add Controller"**
-2. Enter controller details (name, host, ports, username, password)
-3. In a Rumo project, the new controller is automatically set as active
+- **Status Bar**: Click the controller name in the status bar → select **"Add new controller..."**
+- **Command Palette**: `Ctrl+Shift+P` → **"RumoAppDev: Add Controller"**
+
+Enter controller details (name, host, ports, username, password). In a Rumo project, the new controller is automatically set as active.
 
 #### Switch Active Controller
-1. Command Palette → **"RumoAppDev: Switch Controller"**
-2. Select from the list — SFTP, type definitions and debug config are updated automatically
+- **Status Bar**: Click the controller name in the status bar → select from the list
+- **Command Palette**: `Ctrl+Shift+P` → **"RumoAppDev: Switch Controller"**
+
+SFTP connection, type definitions and debug config are updated automatically. Select **"Offline"** to work without a controller connection (no uploads, no error messages).
 
 #### Edit a Controller
-1. Command Palette → **"RumoAppDev: Edit Controller"**
-2. Select the controller to edit
-3. Update any field (name, host, ports, username, password)
-4. Leave the password field empty to keep the current password
-5. If the active controller was edited, the connection is automatically refreshed
+- **Command Palette**: `Ctrl+Shift+P` → **"RumoAppDev: Edit Controller"**
+1. Select the controller to edit
+2. Update any field (name, host, ports, username, password)
+3. Leave the password field empty to keep the current password
+4. If the active controller was edited, the connection is automatically refreshed
 
 #### Change Controller Password
-1. Command Palette → **"RumoAppDev: Change Controller Password"**
-2. Select the controller
-3. Enter the new password — stored securely in VS Code SecretStorage
-4. If the active controller, SFTP reconnects automatically
+- **Command Palette**: `Ctrl+Shift+P` → **"RumoAppDev: Change Controller Password"**
+1. Select the controller
+2. Enter the new password — stored securely in VS Code SecretStorage
+3. If the active controller, SFTP reconnects automatically
 
 #### Delete a Controller
-1. Command Palette → **"RumoAppDev: Delete Controller"**
-2. Select the controller to delete
-3. Confirm deletion (irreversible)
-4. Passwords are removed from SecretStorage
-5. If the active controller was deleted, you are prompted to switch to another
+- **Command Palette**: `Ctrl+Shift+P` → **"RumoAppDev: Delete Controller"**
+1. Select the controller to delete
+2. Confirm deletion (irreversible)
+3. Passwords are removed from SecretStorage
+4. If the active controller was deleted, you are prompted to switch to another
+
+#### Offline Mode
+Select **"Offline"** from the controller list (always available) to work without a network connection:
+- No SFTP connection is established
+- Compiled files are **not** uploaded
+- No error messages for unreachable controllers
+- Existing type definitions are kept; if none are present, built-in defaults are used automatically
 
 ### 3. Build & Deploy
 
@@ -145,15 +155,18 @@ my-rumo-app/
 │   │       └── [appname]/
 │   │           └── _default.ts    # Your app source code
 │   ├── lib/
-│   │   └── *.d.ts                 # Type definitions (auto-downloaded)
+│   │   └── *.d.ts                 # Type definitions (auto-downloaded, read-only!)
 │   └── ...
 ├── build/
 │   ├── type/
 │   │   └── app/...                # Compiled JavaScript (deployed to controller)
 │   └── ...
 ├── controller/
-│   └── type/                       # SFTP plugin mirror of /type/ from controller
-│   └── ...
+│   └── type/                      # Non-TypeScript files to deploy alongside your apps
+│       └── app/
+│           └── [appname]/
+│               ├── messages.json  # e.g. message lists, templates, config files
+│               └── template.html  # Any file that needs to land in /type/ on controller
 ├── tsconfig.json                   # TypeScript config (auto-generated)
 ├── package.json                    # Dependencies
 ├── .gitignore                      # Git ignore (auto-generated)
@@ -162,6 +175,8 @@ my-rumo-app/
 │   └── sftp.json                  # SFTP config (auto-generated, git-ignored)
 └── README.md
 ```
+
+> **`controller/type/`** is for **non-TypeScript files** that need to be deployed to the controller's `/type/` directory — for example templates, message lists, JSON config files, or other assets your app reads at runtime. TypeScript source code goes in `src/type/` (compiled automatically); everything in `controller/type/` is synced directly as-is via the SFTP plugin.
 
 ## Configuration
 
@@ -190,8 +205,8 @@ Example (`settings.json`):
 
 The plugin generates `sftp.json` automatically (git-ignored). For manual tweaking:
 - Created in `.vscode/sftp.json`
-- Contains SSH key path, server credentials, and folder sync settings
-- **Syncs `/type/` folder from controller** — mirrors the remote filesystem locally in `controller/type/`
+- Contains SSH credentials and folder sync settings
+- **Syncs `controller/type/` → `/type/` on controller** — place non-TypeScript assets here (templates, message files, config JSON, etc.) to deploy them alongside compiled apps
 - Do **not** commit this file to version control
 
 ### TypeScript Configuration

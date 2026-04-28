@@ -174,10 +174,18 @@ initialize: true,       // webserver waits for this.initialized!(err) — MUST a
 ## File Structure
 
 ```
-src/type/app/[type]/[name]/_default.ts  # runs on local device FBs
-src/type/app/[type]/[name]/local.ts     # also runs on remote device FBs
-build/type/.../_default.js              # compiled output (auto-deployed)
+src/type/app/[type]/[name]/_default.ts       # runs on local device FBs
+src/type/app/[type]/[name]/local.ts          # also runs on remote device FBs
+build/type/.../_default.js                   # compiled output (auto-deployed)
+controller/type/app/[type]/[name]/           # non-TypeScript assets (synced as-is to controller)
 ```
+
+**`controller/type/`** is for non-TypeScript files that your app needs at runtime on the controller — for example:
+- Message lists (`messages.json`)
+- Templates (`template.html`)
+- Config files, lookup tables, static assets
+
+These files are synced directly to `/type/` on the controller via the SFTP plugin. Do **not** put TypeScript source here.
 
 ## Helper Classes / Shared Code
 
