@@ -178,6 +178,8 @@ src/type/app/[type]/[name]/_default.ts       # runs on local device FBs
 src/type/app/[type]/[name]/local.ts          # also runs on remote device FBs
 build/type/.../_default.js                   # compiled output (auto-deployed)
 controller/type/app/[type]/[name]/           # non-TypeScript assets (synced as-is to controller)
+controller/type/dev/rumo/system/[ns]/        # system rumo device templates (Project Editor)
+controller/type/_group/[ns]/                 # group folder icons for Project Editor
 ```
 
 **`controller/type/`** is for non-TypeScript files that your app needs at runtime on the controller — for example:
@@ -207,6 +209,85 @@ import { helperFn } from './utils/helpers';
 ```
 
 Do NOT use `lib/` for custom code. Only use `lib/` for importing built-in Rumo types (`appDef`, `appUtil`, `out`, `rumoUrl`, `subscriptionManager`, etc.).
+
+## Project Editor Registration
+
+To make an app available in the ARIGO Project Editor, it must be registered in a **system rumo device**.
+Do **not** modify the built-in `/~/type/dev/rumo/system` device. Create your own.
+
+### Template file
+
+Create `controller/type/dev/rumo/system/{namespace}/_default.json`:
+
+```json
+{
+  "id": "/~/type/dev/rumo/system/{namespace}",
+  "extends": "/~/type/dev/rumo",
+  "properties": {
+    "meta": {
+      "properties": {
+        "label": { "default": "{namespace}" },
+        "hardwareType": { "default": "Ethernet" }
+      }
+    },
+    "fb": { "type": "object", "required": true, "default": {}, "properties": {} },
+    "cap": {
+      "required": true,
+      "properties": {
+        "fb": {
+          "required": true,
+          "properties": {
+            "type": {
+              "required": true,
+              "properties": {
+                "/~/type/app/{namespace}/{appName}": {
+                  "required": true,
+                  "properties": {
+                    "min": { "required": true, "default": 0 },
+                    "max": { "required": true, "default": 1 },   // omit max for unlimited instances
+                    "group": { "required": true, "default": "{groupFolder}/{appName}" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+**`cap/fb/type` fields:**
+- `min: 0` = optional, `min: 1` = required
+- `max: 1` = singleton; omit `max` for unlimited instances
+- `group`: folder path in Project Editor tree, e.g. `"math/counter"` or `"settings/config"`
+
+### Group icon directory
+
+Create `controller/type/_group/{namespace}/` — even if empty, this directory must exist on the controller.
+Optionally place icon files named after the group folder: `{groupFolder}.svg` (also `.png`, `.jpg`, `.gif`).
+
+### Applying changes to the controller
+
+**New device** (first time):
+1. Deploy template via SFTP (save the file — SFTP plugin uploads automatically)
+2. Create device instance via REST:
+   - `POST /~`
+   - Body: `{ "meta": { "type": "/~/type/dev/rumo/system/{namespace}", "label": "{namespace}", "alias": "{namespace}" } }`
+
+**Existing device** (template updated):
+1. Deploy template via SFTP
+2. Trigger Request Template:
+   - Get device label: `GET /~/type/dev/rumo/system/{namespace}/~/meta/label`
+   - Start: `POST /~/ws/0/dev/{label}/cmd/requestTemplate` with body `{ "processingState": "request" }`
+   - Poll: `GET /~/ws/0/dev/{label}/cmd/requestTemplate` — wait for `processingState === "done"` (or `"error"`)
+3. Reload the Project Editor page in the browser
+
+**Check if device exists:**
+- `GET /~/type/dev/rumo/system/{namespace}/~/meta/label` — 200 = exists, error = does not exist
+
+> With the VS Code plugin: right-click `_default.ts` → **"RumoAppDev: Add App to Project Editor"** — handles all of the above automatically.
 
 ## tsconfig
 
