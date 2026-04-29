@@ -96,7 +96,7 @@ async function requestTemplate(controller: ControllerConfigWithPassword, namespa
     }
 
     // Step 3: poll until done or error
-    const maxWaitMs = 60000;
+    const maxWaitMs = 120000;
     const pollIntervalMs = 1000;
     const start = Date.now();
     while (Date.now() - start < maxWaitMs) {

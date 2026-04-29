@@ -22,6 +22,7 @@ A comprehensive VS Code extension for developing, debugging, and deploying ARIGO
 - **SFTP Upload**: Direct upload to controller's `/type/` directory via SFTP
 - **Automatic Verification**: Verify successful deployment on the controller
 - **Version Tracking**: Monitor controller version and API compatibility
+- **Add App to Project Editor**: Right-click a `_default.ts` file under `type/app/` to register your app in the ARIGO Project Editor — select namespace, group, and instance mode; the plugin writes the device template and applies it to the controller automatically
 
 ### 🐛 Debugging
 
@@ -29,6 +30,11 @@ A comprehensive VS Code extension for developing, debugging, and deploying ARIGO
 - **Breakpoint Support**: Set breakpoints, step through code, inspect variables
 - **Live Source Maps**: Debug TypeScript code directly with source maps
 - **Remote Inspection**: Connect to Node.js Inspector on controller port 9229
+
+### 🤖 AI / Copilot Support
+
+- **GitHub Copilot Instructions**: The plugin automatically writes and maintains a `.github/copilot-instructions.md` file in your project. This gives GitHub Copilot (and other AI coding assistants that support instruction files) full context about the ARIGO Rumo app framework — datapoints, lifecycle hooks, imports, patterns, and best practices.
+- The file is versioned and updated automatically when a newer plugin version is installed.
 
 ## Installation
 
@@ -116,7 +122,26 @@ This compiles TypeScript from `src/type/` to JavaScript in `build/type/`. The wa
 The plugin automatically uploads compiled files to the controller after each successful build.
 No manual step required.
 
-### 4. Debug Your App
+### 4. Add App to Project Editor
+
+To make your app available in the ARIGO Project Editor (so it can be instantiated and configured from the UI):
+
+1. Right-click on `_default.ts` in `src/type/app/[appname]/`
+2. Select **"RumoAppDev: Add App to Project Editor"**
+3. Follow the prompts:
+   - **Namespace** — select an existing device or create a new one (e.g. `myApps`)
+   - **Group** — select an existing group folder or create a new one (e.g. `math`)
+   - **Instance mode** — singleton (max. 1) or multiple instances
+4. The plugin will:
+   - Write/update the device template at `controller/type/dev/rumo/system/{namespace}/_default.json`
+   - Create the group icon directory (with a placeholder SVG) at `controller/type/_group/{namespace}/`
+   - Deploy the template to the controller via SFTP
+   - Create the device (if new) or trigger **Request Template** (if existing) via REST
+5. **Reload the Project Editor page** to see your app in the tree
+
+> The Request Template step can take up to 2 minutes. A progress notification is shown while waiting.
+
+### 5. Debug Your App
 
 #### Attach Debugger
 1. Enable debug mode on the controller first (see [Debug Control Packages](#debug-control-packages))
