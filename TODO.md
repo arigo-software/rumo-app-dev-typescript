@@ -2,7 +2,8 @@
 
 ## Offen
 
-- [ ] **Doku: App in Projekteditor einfügen** — beschreiben wie eine neue App in den Projekteditor eingefügt wird
+- [x] **Doku: App in Projekteditor einfügen** — beschreiben wie eine neue App in den Projekteditor eingefügt wird (erledigt 2026-04-29)
+- [ ] **Doku: dev label, ws label, fb name ermitteln** — beschreiben wie man diese Labels/Namen in einer Rumo-Steuerung herausfindet (REST-Endpoints, Beispiele)
 
 ## Wenn alle Todos erledigt: Release 1.0
 

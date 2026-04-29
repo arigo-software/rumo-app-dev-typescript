@@ -918,16 +918,13 @@ export = appDef;
 const LOCAL_APP_BOILERPLATE = DEFAULT_APP_BOILERPLATE;
 
 function setupAppFileWatcher(context: vscode.ExtensionContext): void {
-    const insertBoilerplate = async (uri: vscode.Uri) => {
+    const insertBoilerplate = async (uri: vscode.Uri, boilerplate: string) => {
         try {
             await new Promise(r => setTimeout(r, 300));
 
             // Open document and check content via VS Code (not disk stat)
             const doc = await vscode.workspace.openTextDocument(uri);
             if (doc.getText().trim().length > 0) { return; }
-
-            const isDefault = path.basename(uri.fsPath) === '_default.ts';
-            const boilerplate = isDefault ? DEFAULT_APP_BOILERPLATE : LOCAL_APP_BOILERPLATE;
 
             // Insert via editor API so VS Code sees the change immediately
             const editor = await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true });
@@ -942,25 +939,35 @@ function setupAppFileWatcher(context: vscode.ExtensionContext): void {
         }
     };
 
-    const watcherDefault = vscode.workspace.createFileSystemWatcher('**/type/app/**/_default.ts');
-    const watcherLocal = vscode.workspace.createFileSystemWatcher('**/type/app/**/local.ts');
+    // type/app/ — boilerplate only for _default.ts, not for local.ts
+    const watcherAppDefault = vscode.workspace.createFileSystemWatcher('**/type/app/**/_default.ts');
+    watcherAppDefault.onDidCreate(uri => insertBoilerplate(uri, DEFAULT_APP_BOILERPLATE));
 
-    watcherDefault.onDidCreate(insertBoilerplate);
-    watcherLocal.onDidCreate(insertBoilerplate);
+    // type/fb/ — boilerplate for both _default.ts and local.ts
+    const watcherFbDefault = vscode.workspace.createFileSystemWatcher('**/type/fb/**/_default.ts');
+    const watcherFbLocal = vscode.workspace.createFileSystemWatcher('**/type/fb/**/local.ts');
+    watcherFbDefault.onDidCreate(uri => insertBoilerplate(uri, DEFAULT_APP_BOILERPLATE));
+    watcherFbLocal.onDidCreate(uri => insertBoilerplate(uri, LOCAL_APP_BOILERPLATE));
 
     // Also trigger on document open — catches cases where watcher fires late
     context.subscriptions.push(
         vscode.workspace.onDidOpenTextDocument(async (doc) => {
             const name = path.basename(doc.uri.fsPath);
-            const inTypeDir = doc.uri.fsPath.includes(`${path.sep}type${path.sep}app${path.sep}`);
-            if (name !== '_default.ts' && name !== 'local.ts') { return; }
-            if (!inTypeDir) { return; }
+            const fsPath = doc.uri.fsPath;
+            const inAppDir = fsPath.includes(`${path.sep}type${path.sep}app${path.sep}`);
+            const inFbDir = fsPath.includes(`${path.sep}type${path.sep}fb${path.sep}`);
+
             if (doc.getText().trim().length > 0) { return; }
-            await insertBoilerplate(doc.uri);
+
+            if (inAppDir && name === '_default.ts') {
+                await insertBoilerplate(doc.uri, DEFAULT_APP_BOILERPLATE);
+            } else if (inFbDir && (name === '_default.ts' || name === 'local.ts')) {
+                await insertBoilerplate(doc.uri, DEFAULT_APP_BOILERPLATE);
+            }
         })
     );
 
-    context.subscriptions.push(watcherDefault, watcherLocal);
+    context.subscriptions.push(watcherAppDefault, watcherFbDefault, watcherFbLocal);
 }
 
 // ── cmdSetDebugMode ───────────────────────────────────────────────────────────

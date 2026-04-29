@@ -32,8 +32,6 @@ A comprehensive VS Code extension for developing, debugging, and deploying ARIGO
 
 ## Installation
 
-### Option 1: Install from GitHub Releases (Recommended)
-
 1. **Download** the latest `.vsix` file from [GitHub Releases](https://github.com/arigo-software/rumo-app-dev-typescript/releases)
 2. **Install** in VS Code: Extensions (`Ctrl+Shift+X`) → `...` menu → **Install from VSIX...** → select the file
 3. **Restart** VS Code
@@ -42,13 +40,6 @@ Or from terminal:
 ```bash
 wget https://github.com/arigo-software/rumo-app-dev-typescript/releases/download/latest/rumo-app-dev-typescript.vsix
 code --install-extension rumo-app-dev-typescript.vsix
-```
-
-### Option 2: Install from Open VSX (code-server / VSCodium)
-
-```bash
-wget "https://open-vsx.org/api/arigo-software/rumo-app-dev-typescript/latest/file/arigo-software.rumo-app-dev-typescript.latest.vsix"
-code-server --install-extension rumo-app-dev-typescript.latest.vsix
 ```
 
 ## Getting Started
