@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ControllerManager } from './controllerManager';
+import { cmdAddAppToProjectEditor } from './projectEditorRegistrar';
 import { SftpSync } from './sftpSync';
 import { TypeDownloader } from './typeDownloader';
 import { ProjectSetup } from './projectSetup';
@@ -63,6 +64,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ),
         vscode.commands.registerCommand('rumo-app-dev-typescript.deleteController', () =>
             cmdDeleteController(context)
+        ),
+        vscode.commands.registerCommand('rumo-app-dev-typescript.addAppToProjectEditor', (uri: vscode.Uri) =>
+            cmdAddAppToProjectEditor(context, uri, () =>
+                controllerManager.getActiveControllerWithPassword(getWorkspaceRoot() ?? '')
+            )
         ),
         vscode.commands.registerCommand('rumo-app-dev-typescript.changePassword', () =>
             cmdChangePassword(context)

@@ -2,7 +2,7 @@
   "name": "rumo-app-dev-typescript",
   "displayName": "Rumo App Development (TypeScript)",
   "description": "TypeScript app development for the ARIGO Rumo controller. Handles project setup, SFTP upload, type definitions download, and debug configuration.",
-  "version": "0.41.0",
+  "version": "0.42.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/arigo-software/rumo-app-dev.git"
@@ -62,8 +62,21 @@
       {
         "command": "rumo-app-dev-typescript.changePassword",
         "title": "RumoAppDev: Change Controller Password"
+      },
+      {
+        "command": "rumo-app-dev-typescript.addAppToProjectEditor",
+        "title": "RumoAppDev: Add App to Project Editor"
       }
     ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "rumo-app-dev-typescript.addAppToProjectEditor",
+          "when": "resourceFilename == '_default.ts' && resourcePath =~ /[\\\\/]type[\\\\/]app[\\\\/]/",
+          "group": "rumo@1"
+        }
+      ]
+    },
     "configuration": {
       "title": "Rumo App Development",
       "properties": {
