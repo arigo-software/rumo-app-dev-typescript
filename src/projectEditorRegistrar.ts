@@ -77,31 +77,44 @@ async function createDevice(controller: ControllerConfigWithPassword, namespace:
 
 /** Trigger "Request Template" on an existing device to apply template changes. */
 async function requestTemplate(controller: ControllerConfigWithPassword, namespace: string): Promise<void> {
-    // Find the device id by listing devices of this type
-    const listRes = await rumoRequest(
+    // Step 1: get device label (already known = namespace, but confirm via API)
+    const labelRes = await rumoRequest(
         controller,
         'GET',
-        `/~/ws/0/tag/obj/meta/type?tag=/~/type/dev/rumo/system/${namespace}`
+        `/~/type/dev/rumo/system/${namespace}/~/meta/label`
     );
-    if (listRes.statusCode !== 200) {
-        throw new Error(`Could not find device for namespace "${namespace}" (HTTP ${listRes.statusCode})`);
+    if (labelRes.statusCode !== 200) {
+        throw new Error(`Could not find device label for "${namespace}" (HTTP ${labelRes.statusCode})`);
     }
-    let devPath: string;
-    try {
-        const data = JSON.parse(listRes.body);
-        // Response is an object keyed by device path
-        const keys = Object.keys(data);
-        if (keys.length === 0) { throw new Error('No device found'); }
-        devPath = keys[0]; // e.g. /~/ws/0/dev/101
-    } catch (e) {
-        throw new Error(`Could not parse device list: ${(e as Error).message}`);
+    const deviceLabel = JSON.parse(labelRes.body) as string;
+
+    // Step 2: POST requestTemplate command
+    const cmdUrl = `/~/ws/0/dev/${encodeURIComponent(deviceLabel)}/cmd/requestTemplate`;
+    const startRes = await rumoRequest(controller, 'POST', cmdUrl, { processingState: 'request' });
+    if (startRes.statusCode !== 200 && startRes.statusCode !== 201 && startRes.statusCode !== 204) {
+        throw new Error(`requestTemplate start failed (HTTP ${startRes.statusCode}): ${startRes.body}`);
     }
 
-    // POST requestTemplate command
-    const res = await rumoRequest(controller, 'POST', `${devPath}/cmd/requestTemplate`, {});
-    if (res.statusCode !== 200 && res.statusCode !== 204) {
-        throw new Error(`requestTemplate failed (HTTP ${res.statusCode}): ${res.body}`);
+    // Step 3: poll until done or error
+    const maxWaitMs = 60000;
+    const pollIntervalMs = 1000;
+    const start = Date.now();
+    while (Date.now() - start < maxWaitMs) {
+        await new Promise(r => setTimeout(r, pollIntervalMs));
+        const pollRes = await rumoRequest(controller, 'GET', cmdUrl);
+        if (pollRes.statusCode !== 200) { continue; }
+        let state: string;
+        try {
+            const body = JSON.parse(pollRes.body);
+            state = (body?.processingState ?? body) as string;
+        } catch {
+            continue;
+        }
+        if (state === 'done') { return; }
+        if (state === 'error') { throw new Error(`requestTemplate returned error state for device "${deviceLabel}"`); }
+        // state === 'pending' — keep polling
     }
+    throw new Error(`requestTemplate timed out after ${maxWaitMs / 1000}s for device "${deviceLabel}"`);
 }
 
 // ── Template file helpers ──────────────────────────────────────────────────────
@@ -435,7 +448,6 @@ export async function cmdAddAppToProjectEditor(
 
                     progress.report({ message: 'Requesting template update on controller (this may take a moment)…' });
                     await requestTemplate(controller, namespace);
-
                     vscode.window.showInformationMessage(
                         `RumoAppDev: Template updated for "${namespace}". Reload the Project Editor page to see your app.`
                     );
