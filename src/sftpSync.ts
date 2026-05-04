@@ -56,6 +56,9 @@ export class SftpSync {
                 port: this.controller.sshPort,
                 username: this.controller.username,
                 password: this.controller.password,
+                algorithms: {
+                    serverHostKey: ['ssh-rsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521', 'ssh-ed25519'],
+                },
             });
             this.connected = true;
             this.reconnectAttempts = 0;
