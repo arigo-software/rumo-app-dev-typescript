@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import chokidar from 'chokidar';
 import { ControllerManager } from './controllerManager';
 import { cmdAddAppToProjectEditor } from './projectEditorRegistrar';
 import { SftpSync } from './sftpSync';
@@ -19,6 +20,7 @@ let projectSetup: ProjectSetup;
 let debugConfig: DebugConfig;
 let debugMode: DebugMode;
 let statusBar: StatusBar;
+let outputChannel: vscode.OutputChannel;
 
 /** workspaceState key prefix for caching controller version. */
 const VERSION_CACHE_KEY = 'rumoAppDevTypescript.cachedVersion';
@@ -26,6 +28,8 @@ const VERSION_CACHE_KEY = 'rumoAppDevTypescript.cachedVersion';
 // ── Activation ─────────────────────────────────────────────────────────────────
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+    outputChannel = vscode.window.createOutputChannel('Rumo App Development');
+    outputChannel.appendLine('RumoAppDev: Extension activating…');
     console.log('RumoAppDev: Extension activating…');
 
     controllerManager = new ControllerManager(context);
@@ -230,21 +234,17 @@ function setupBuildWatcher(context: vscode.ExtensionContext): void {
     const workspaceRoot = getWorkspaceRoot();
     if (!workspaceRoot) { return; }
 
-    const pattern = new vscode.RelativePattern(
-        workspaceRoot,
-        'build/type/**/*.{js,js.map}'
-    );
-
-    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-    const changeTimeouts = new Map<string, NodeJS.Timeout>();
+    const buildTypeDir = path.join(workspaceRoot, 'build', 'type');
 
     // Batch uploads: collect changed files and upload together after a short delay
     let batchTimeout: NodeJS.Timeout | undefined;
     const pendingFiles = new Set<string>();
 
-    const scheduleUpload = (uri: vscode.Uri) => {
-        if (!fs.existsSync(uri.fsPath)) { return; }
-        pendingFiles.add(uri.fsPath);
+    const scheduleUpload = (filePath: string) => {
+        if (!filePath.endsWith('.js') && !filePath.endsWith('.js.map')) { return; }
+        if (!fs.existsSync(filePath)) { return; }
+        outputChannel.appendLine(`RumoAppDev: File change detected: ${filePath}`);
+        pendingFiles.add(filePath);
 
         if (batchTimeout) { clearTimeout(batchTimeout); }
         batchTimeout = setTimeout(async () => {
@@ -253,6 +253,7 @@ function setupBuildWatcher(context: vscode.ExtensionContext): void {
             pendingFiles.clear();
             if (files.length === 0) { return; }
 
+            outputChannel.appendLine(`RumoAppDev: Uploading ${files.length} file(s)…`);
             const controller = await controllerManager.getActiveControllerWithPassword(workspaceRoot);
             if (controller) { statusBar.setStatus(controller.name, `uploading ${files.length} file(s)…`); }
 
@@ -261,12 +262,10 @@ function setupBuildWatcher(context: vscode.ExtensionContext): void {
                 title: `RumoAppDev: Uploading ${files.length} file(s)…`,
                 cancellable: false,
             }, async (progress) => {
-                let done = 0;
                 for (const file of files) {
-                    const shortName = path.relative(path.join(workspaceRoot, 'build', 'type'), file);
+                    const shortName = path.relative(buildTypeDir, file);
                     progress.report({ increment: (1 / files.length) * 100, message: shortName });
                     await sftpSync.uploadFile(file, workspaceRoot);
-                    done++;
                 }
             });
 
@@ -274,9 +273,44 @@ function setupBuildWatcher(context: vscode.ExtensionContext): void {
         }, 800);
     };
 
-    watcher.onDidChange(scheduleUpload);
-    watcher.onDidCreate(scheduleUpload);
+    // Use absolute glob pattern — more reliable than RelativePattern for externally-generated files
+    const absPattern = buildTypeDir.replace(/\\/g, '/') + '/**/*.js';
+    const absPatternMap = buildTypeDir.replace(/\\/g, '/') + '/**/*.js.map';
+    const watcher = vscode.workspace.createFileSystemWatcher(`{${absPattern},${absPatternMap}}`);
 
+    // Detect EMFILE (too many open files) by trying to open a test file descriptor
+    const checkFdLimit = () => {
+        try {
+            const testFile = path.join(buildTypeDir, '.rumo-fd-test');
+            fs.mkdirSync(buildTypeDir, { recursive: true });
+            const fd = fs.openSync(testFile, 'w');
+            fs.closeSync(fd);
+            fs.unlinkSync(testFile);
+            return true;
+        } catch (err: unknown) {
+            const msg = (err as NodeJS.ErrnoException).code;
+            if (msg === 'EMFILE') {
+                const warning = 'RumoAppDev: ⚠️ Too many open files (EMFILE) — automatic upload may not work. Please reload VS Code window (Ctrl+Shift+P → "Reload Window").';
+                outputChannel.appendLine(warning);
+                outputChannel.show(true);
+                vscode.window.showWarningMessage(warning);
+                return false;
+            }
+            return true;
+        }
+    };
+
+    // Check FD limit once at startup and periodically
+    if (!checkFdLimit()) { return; }
+    const fdCheckInterval = setInterval(() => {
+        if (!checkFdLimit()) { clearInterval(fdCheckInterval); }
+    }, 30000);
+    context.subscriptions.push({ dispose: () => clearInterval(fdCheckInterval) });
+
+    watcher.onDidChange((uri) => scheduleUpload(uri.fsPath));
+    watcher.onDidCreate((uri) => scheduleUpload(uri.fsPath));
+
+    outputChannel.appendLine(`RumoAppDev: Build watcher registered for: ${absPattern}`);
     context.subscriptions.push(watcher);
 }
 

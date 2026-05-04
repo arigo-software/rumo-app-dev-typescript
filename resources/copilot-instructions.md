@@ -91,6 +91,18 @@ export = appDef;
 - Re-enter with `this.callback(unpromisify(fn))` (async) or `this.callbackSync(fn)` (sync)
 - Never modify datapoints outside context — use callbacks
 
+**`appDef.update` is mandatory**: Every app **must** define `appDef.update = callDpUpdate(appDef, { ... })`, even if it has no input datapoints (use an empty object `{}`). Without it, the framework will not call any update handlers and input datapoint changes will be silently ignored.
+
+```typescript
+// Minimum — no inputs but still required:
+appDef.update = callDpUpdate(appDef, {});
+
+// With inputs:
+appDef.update = callDpUpdate(appDef, {
+    in1: unpromisify(updateIn1),
+});
+```
+
 **`request.fromDatabase`**: Always check in update handlers. Skip processing on initial DB load.
 
 **`AppHookResult`**: Return `false`/`undefined` (no change), `"dpName"` (one DP), `["dp1","dp2"]` (multiple), `null` (all outputs).

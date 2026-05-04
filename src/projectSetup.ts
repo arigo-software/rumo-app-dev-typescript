@@ -9,7 +9,7 @@ import { ControllerConfigWithPassword } from './controllerManager';
 // Bump COPILOT_INSTRUCTIONS_VERSION whenever the content changes.
 // The plugin will update the file in user projects if the version is outdated.
 // File: .github/rumo-app-instructions.md (separate from user's copilot-instructions.md)
-const COPILOT_INSTRUCTIONS_VERSION = '4';
+const COPILOT_INSTRUCTIONS_VERSION = '5';
 const COPILOT_INSTRUCTIONS_VERSION_MARKER = `<!-- rumo-app-dev-instructions-version: ${COPILOT_INSTRUCTIONS_VERSION} -->`;
 const RUMO_INSTRUCTIONS_FILENAME = 'copilot-instructions.md';
 const CURSOR_RULES_FILENAME = 'rumo-app.md'; // written to .cursor/rules/

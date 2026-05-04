@@ -16,7 +16,7 @@ esbuild.build({
     entryPoints: ['src/extension.ts'],
     bundle: true,
     outfile: 'out/extension.js',
-    external: ['vscode', 'ssh2-sftp-client', 'ssh2', 'lzma-native'],  // native modules can't be bundled
+    external: ['vscode', 'ssh2-sftp-client', 'ssh2', 'lzma-native', 'chokidar', 'fsevents'],  // native modules can't be bundled
     format: 'cjs',
     platform: 'node',
     target: 'node18',
