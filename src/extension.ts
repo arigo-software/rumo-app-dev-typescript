@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import chokidar from 'chokidar';
 import { ControllerManager } from './controllerManager';
 import { cmdAddAppToProjectEditor } from './projectEditorRegistrar';
 import { SftpSync } from './sftpSync';
