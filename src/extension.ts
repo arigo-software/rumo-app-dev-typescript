@@ -982,13 +982,13 @@ function setupAppFileWatcher(context: vscode.ExtensionContext): void {
         }
     };
 
-    // type/app/ — boilerplate only for _default.ts, not for local.ts
-    const watcherAppDefault = vscode.workspace.createFileSystemWatcher('**/type/app/**/_default.ts');
+    // src/type/app/ — boilerplate only for _default.ts, not for local.ts
+    const watcherAppDefault = vscode.workspace.createFileSystemWatcher('src/type/app/**/_default.ts');
     watcherAppDefault.onDidCreate(uri => insertBoilerplate(uri, DEFAULT_APP_BOILERPLATE));
 
-    // type/fb/ — boilerplate for both _default.ts and local.ts
-    const watcherFbDefault = vscode.workspace.createFileSystemWatcher('**/type/fb/**/_default.ts');
-    const watcherFbLocal = vscode.workspace.createFileSystemWatcher('**/type/fb/**/local.ts');
+    // src/type/fb/ — boilerplate for both _default.ts and local.ts
+    const watcherFbDefault = vscode.workspace.createFileSystemWatcher('src/type/fb/**/_default.ts');
+    const watcherFbLocal = vscode.workspace.createFileSystemWatcher('src/type/fb/**/local.ts');
     watcherFbDefault.onDidCreate(uri => insertBoilerplate(uri, DEFAULT_APP_BOILERPLATE));
     watcherFbLocal.onDidCreate(uri => insertBoilerplate(uri, LOCAL_APP_BOILERPLATE));
 
@@ -997,8 +997,8 @@ function setupAppFileWatcher(context: vscode.ExtensionContext): void {
         vscode.workspace.onDidOpenTextDocument(async (doc) => {
             const name = path.basename(doc.uri.fsPath);
             const fsPath = doc.uri.fsPath;
-            const inAppDir = fsPath.includes(`${path.sep}type${path.sep}app${path.sep}`);
-            const inFbDir = fsPath.includes(`${path.sep}type${path.sep}fb${path.sep}`);
+            const inAppDir = fsPath.includes(`${path.sep}src${path.sep}type${path.sep}app${path.sep}`);
+            const inFbDir = fsPath.includes(`${path.sep}src${path.sep}type${path.sep}fb${path.sep}`);
 
             if (doc.getText().trim().length > 0) { return; }
 
