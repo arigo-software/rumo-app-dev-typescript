@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import chokidar from 'chokidar';
 import { ControllerManager } from './controllerManager';
 import { cmdAddAppToProjectEditor } from './projectEditorRegistrar';
 import { SftpSync } from './sftpSync';
@@ -79,8 +78,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ),
     );
 
-    // Watch for new app files and insert boilerplate
-    setupAppFileWatcher(context);
+    // Watch for new app files and insert boilerplate (only in Rumo projects)
+    // Will be set up when project is activated
+    // setupAppFileWatcher(context);
 
     // Watch for VS Code settings changes (controller list in global settings)
     context.subscriptions.push(
@@ -132,6 +132,9 @@ async function activateForProject(
 ): Promise<void> {
     // Silent structure setup
     await projectSetup.silentInit(workspaceRoot, context);
+
+    // Set up file watchers for boilerplate injection (only in Rumo projects)
+    setupAppFileWatcher(context);
 
     const controller = await controllerManager.getActiveControllerWithPassword(workspaceRoot);
     statusBar.update(controller?.name);
