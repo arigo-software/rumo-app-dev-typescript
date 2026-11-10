@@ -729,11 +729,11 @@ function startConnectionMonitor(controller: import('./controllerManager').Contro
             const req = https.default.request({
                 hostname: controller.host,
                 port: controller.httpsPort,
-                path: '/~/ws/0/dev/0/fb/develop/dp/nodeDebug/dat/value',
+                path: '/~/ws/0/dev/0/fb/Setup/dp/version/dat/value',
                 method: 'GET',
                 headers: { 'Authorization': `Basic ${auth}` },
                 rejectUnauthorized: false,
-            }, res => { res.resume(); resolve(res.statusCode === 200); });
+            }, res => { res.resume(); resolve(res.statusCode !== undefined && res.statusCode < 500); });
             req.on('error', () => resolve(false));
             req.setTimeout(3000, () => { req.destroy(); resolve(false); });
             req.end();
