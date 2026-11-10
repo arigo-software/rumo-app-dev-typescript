@@ -53,12 +53,81 @@ const TSCONFIG_CONTENT = JSON.stringify({
     exclude: ['build', 'web', 'static', 'node_modules'],
 }, null, 2);
 
+const GITIGNORE_CONTENT = `# Dependencies (including src/node_modules/)
+node_modules/
+
+# Compiled output and TypeScript cache
+/build/
+*.tsbuildinfo
+
+# Rumo type definitions downloaded from the controller
+src/**/*.d.ts
+
+# Local environment files; keep example configurations versionable
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Logs and test coverage
+*.log
+/logs/
+/coverage/
+/.nyc_output/
+
+# Local editor and deployment settings
+/.vscode/sftp.json
+/.vscode/settings.json
+/.vscode/extensions.json
+/.vscode/launch.json
+/.vscode/*.code-workspace
+/.history/
+/.idea/
+*.swp
+*.swo
+*~
+
+/.cursor/rules/rumo-app.md
+/.github/copilot-instructions.md
+
+# Operating system files
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+`;
+
 const GITIGNORE_ENTRIES = [
-    'build/',
     'node_modules/',
+    '/build/',
+    '*.tsbuildinfo',
     'src/**/*.d.ts',
-    'src/node_modules/',   // downloaded from controller (version-specific)
-    '.vscode/sftp.json',
+    '.env',
+    '.env.*',
+    '!.env.example',
+    '!.env.sample',
+    '!.env.template',
+    '*.log',
+    '/logs/',
+    '/coverage/',
+    '/.nyc_output/',
+    '/.vscode/sftp.json',
+    '/.vscode/settings.json',
+    '/.vscode/extensions.json',
+    '/.vscode/launch.json',
+    '/.vscode/*.code-workspace',
+    '/.history/',
+    '/.idea/',
+    '*.swp',
+    '*.swo',
+    '*~',
+    '/.cursor/rules/rumo-app.md',
+    '/.github/copilot-instructions.md',
+    '.DS_Store',
+    '._*',
+    'Thumbs.db',
+    'Desktop.ini',
 ];
 
 const PACKAGE_JSON_CONTENT = JSON.stringify({
@@ -189,12 +258,18 @@ export class ProjectSetup {
 
     public ensureGitIgnore(workspaceRoot: string, silent = false): void {
         const gitignorePath = path.join(workspaceRoot, '.gitignore');
-        let existing = '';
 
-        if (fs.existsSync(gitignorePath)) {
-            existing = fs.readFileSync(gitignorePath, 'utf8');
+        // New project: write the full template
+        if (!fs.existsSync(gitignorePath)) {
+            fs.writeFileSync(gitignorePath, GITIGNORE_CONTENT, 'utf8');
+            if (!silent) {
+                vscode.window.showInformationMessage('RumoAppDev: .gitignore created.');
+            }
+            return;
         }
 
+        // Existing project: merge missing entries
+        const existing = fs.readFileSync(gitignorePath, 'utf8');
         const lines = existing.split('\n').map(l => l.trim());
         const missingEntries = GITIGNORE_ENTRIES.filter(
             entry => !lines.includes(entry.trim())
