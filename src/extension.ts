@@ -94,9 +94,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Watch for rumo.config.json creation / deletion
     setupRumoConfigWatcher(context);
 
-    // Set up file watcher for build/type/
-    setupBuildWatcher(context);
-
     // Perform initial activation
     await initialActivation(context);
 
@@ -132,6 +129,9 @@ async function activateForProject(
 ): Promise<void> {
     // Silent structure setup
     await projectSetup.silentInit(workspaceRoot, context);
+
+    // Set up file watcher for build/type/ (only in Rumo projects)
+    setupBuildWatcher(context);
 
     // Set up file watchers for boilerplate injection (only in Rumo projects)
     setupAppFileWatcher(context);
